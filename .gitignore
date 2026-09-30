@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.e2e-sandbox/
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
