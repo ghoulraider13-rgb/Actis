@@ -13,9 +13,12 @@ A filesystem activity tracker that logs every meaningful change (new files, edit
 ## Installation
 
 ```bash
-npm install -g actis
-# or
-npx actis
+# From source (not published to npm)
+git clone https://github.com/ghoulraider13-rgb/Actis.git
+cd Actis
+npm install
+npm run build
+# CLI available as ./dist/cli.js or via npx from repo root
 ```
 
 ## Quick Start
@@ -38,8 +41,9 @@ actis query "modified config files since Monday"
 # List tracked projects
 actis list
 
-# Show history for a specific file
-actis show src/index.ts
+# Launch the web dashboard (reads the same local ledger)
+npm run web
+# → http://127.0.0.1:7420
 ```
 
 ## Commands
@@ -51,6 +55,7 @@ actis show src/index.ts
 | `actis query <question>` | Query the activity log in plain English |
 | `actis list` | List all tracked projects |
 | `actis show <file>` | Show detailed history for a file |
+| `npm run web` | Start the local web dashboard on port 7420 |
 
 ## Query Examples
 
@@ -60,6 +65,15 @@ actis show src/index.ts
 - `"modified config files since Monday"` — edits to config files since Monday
 - `"show me changes in package.json"` — history of a specific file
 - `"latest 10 changes"` — most recent 10 events
+
+## Web Dashboard
+
+The web UI (`npm run web`) is a plain Node HTTP server (no Express, no build step) that serves:
+- **Dashboard** at `http://127.0.0.1:7420` — dark-mode timeline of events, project selector
+- **REST API** under `/api/` — JSON endpoints for projects, events, stats, and natural-language queries
+- **Inspectability**: `/api/query` returns exactly how the NL parser interpreted your question
+
+All data stays on your machine; the server only reads the local `~/.actis/ledger.db`.
 
 ## Architecture
 
@@ -74,12 +88,19 @@ actis show src/index.ts
                                     │ Query Layer │
                                     │ (NL parser) │
                                     └─────────────┘
+                                           │
+                                           ▼
+                                    ┌─────────────┐
+                                    │ Web Server  │
+                                    │ (optional)  │
+                                    └─────────────┘
 ```
 
-- **Watcher**: Uses `chokidar` with debouncing to batch rapid changes
-- **Storage**: SQLite with indexes on project, time, and path
+- **Watcher**: Uses `chokidar` with 500ms debouncing to batch rapid changes
+- **Storage**: SQLite (via `sql.js`, pure JS) with indexes on project, time, and path
 - **Diffs**: Computed via `diff` library (line-level for readability)
 - **Queries**: Parsed with rule-based NLP (no external API calls)
+- **Web**: Plain `http` module, serves `public/` as static assets + `/api/*` JSON
 
 ## Data Stored
 
@@ -90,13 +111,30 @@ Each event records:
 - File sizes before/after
 - SHA-256 hashes before/after (truncated)
 
-## Configuration
+## Default Ignore Patterns
 
-Ignore patterns (default):
-- `node_modules/`, `.git/`, `dist/`, `build/`, `.actis/`
-- `*.log`, `*.tmp`, `.DS_Store`, `Thumbs.db`
+```
+**/node_modules/**
+**/.git/**
+**/dist/**
+**/build/**
+**/.actis/**
+**/*.log
+**/*.tmp
+**/.DS_Store
+**/Thumbs.db
+```
 
-Customize via `WatcherConfig` in code or extend the CLI.
+Override via `WatcherConfig.ignorePatterns` in code or extend the CLI.
+
+## Development
+
+```bash
+npm run dev       # tsx watch on CLI
+npm run web:dev   # tsx watch on web server
+npm run build     # tsc → dist/
+npm run test      # vitest (no tests written yet)
+```
 
 ## License
 
