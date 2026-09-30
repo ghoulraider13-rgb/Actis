@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>actis — local-first activity ledger</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --blue: #58a6ff;
+    --accent: #58a6ff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', Menlo, Consolas, monospace;
+    font-size: 13px;
+    padding: 24px;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  .wrap { max-width: 1200px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  header h1 { font-size: 20px; font-weight: 700; }
+  header .sub { color: var(--muted); }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .card .value { font-size: 24px; font-weight: 700; margin-top: 6px; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .toolbar input[type="text"] {
+    flex: 1; min-width: 240px;
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 8px 10px; font: inherit;
+  }
+  .toolbar input[type="text"]:focus { outline: none; border-color: var(--accent); }
+  button {
+    background: #21262d; border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 8px 12px; font: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  .pill {
+    border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+    border-radius: 999px; padding: 5px 12px; cursor: pointer; font-size: 12px; user-select: none;
+  }
+  .pill.active { color: var(--text); border-color: var(--accent); background: #1c2a3a; }
+  .panel-block {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    margin-bottom: 16px; overflow: hidden;
+  }
+  .panel-block .head {
+    padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--muted);
+    display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  }
+  #eventList { padding: 6px 0; }
+  .event {
+    padding: 8px 14px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+    border-bottom: 1px solid #21262d; cursor: pointer;
+  }
+  .event:last-child { border-bottom: none; }
+  .event:hover { background: #1c2129; }
+  .event .icon { width: 14px; text-align: center; }
+  .event.create .icon { color: var(--green); }
+  .event.modify .icon { color: var(--yellow); }
+  .event.delete .icon { color: var(--red); }
+  .event.rename .icon { color: var(--blue); }
+  .event .time { color: var(--muted); }
+  .event .path { font-weight: 600; word-break: break-all; }
+  .event .size { color: var(--muted); }
+  .eventDetail {
+    display: none; padding: 12px 14px; background: #0d1117; border-top: 1px solid #21262d;
+    width: 100%;
+  }
+  .eventDetail.open { display: block; }
+  .eventDetail pre {
+    background: #0d1117; padding: 10px; border-radius: 6px; overflow-x: auto;
+    font-size: 12px; line-height: 1.5; color: var(--muted); max-height: 300px; overflow-y: auto;
+  }
+  .eventDetail pre .add { color: var(--green); }
+  .eventDetail pre .del { color: var(--red); }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .chip {
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
+    font-size: 11px; color: var(--muted); cursor: pointer;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--text); }
+  .hidden { display: none; }
+  .error { color: var(--red); padding: 10px 14px; }
+  footer { color: var(--muted); text-align: center; padding: 20px 0 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>actis</h1>
+    <span class="sub">local-first activity ledger — offline &middot; deterministic &middot; inspectable</span>
+    <span style="flex:1"></span>
+    <span id="connState" class="sub">connecting&hellip;</span>
+  </header>
+
+  <div class="cards">
+    <div class="card"><div class="label">Projects tracked</div><div class="value" id="statProjects">&ndash;</div></div>
+    <div class="card"><div class="label">Events total</div><div class="value" id="statTotal">&ndash;</div></div>
+    <div class="card"><div class="label">Events today</div><div class="value green" id="statToday">&ndash;</div></div>
+    <div class="card"><div class="label">Showing</div><div class="value" id="statShown">&ndash;</div></div>
+  </div>
+
+  <div class="toolbar">
+    <input type="text" id="queryInput" placeholder='ask: "what changed since tuesday" &middot; "new files in src" &middot; "deleted files last week"'>
+    <button class="primary" id="askBtn">Ask</button>
+    <button id="allBtn">Show all</button>
+  </div>
+
+  <div class="toolbar">
+    <span class="pill active" data-type="">all</span>
+    <span class="pill" data-type="create">created</span>
+    <span class="pill" data-type="modify">modified</span>
+    <span class="pill" data-type="delete">deleted</span>
+    <span style="flex:1"></span>
+    <span class="sub" id="projectLabel"></span>
+  </div>
+
+  <div id="parsedBox" class="panel-block hidden">
+    <div class="head"><span>how your question was parsed (inspectable, deterministic)</span></div>
+    <div style="padding: 10px 14px;"><pre id="parsedPre" style="max-height:120px"></pre></div>
+  </div>
+
+  <div class="panel-block">
+    <div class="head"><span id="listHead">events</span><span id="dbPath"></span></div>
+    <div id="eventList"></div>
+  </div>
+
+  <footer>actis &middot; all data in ~/.actis/ledger.db on this machine &middot; no cloud AI involved in tracking</footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var state = { type: '', project: null, events: [] };
+
+  var ICONS = { create: '+', modify: '~', delete: 'x', rename: '>' };
+
+  function $(id) { return document.getElementById(id); }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>')
+      .replace(/"/g, '"').replace(/'/g, '&#39;');
+  }
+
+  function fmtTime(ms) {
+    var d = new Date(ms);
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+      ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+
+  function fmtSize(ev) {
+    if (ev.size_before === null || ev.size_before === undefined) return '';
+    var diff = (ev.size_after || 0) - ev.size_before;
+    var cls = diff >= 0 ? 'added' : 'removed';
+    var sign = diff >= 0 ? '+' : '';
+    return '<span class="size ' + cls + '">' + sign + diff + ' bytes</span>';
+  }
+
+  function renderDiffHtml(diffText) {
+    var lines = String(diffText).split('\n');
+    var out = [];
+    for (var i = 0; i < lines.length && i < 400; i++) {
+      var line = lines[i];
+      var cls = '';
+      if (line.charAt(0) === '+') cls = 'add';
+      else if (line.charAt(0) === '-') cls = 'del';
+      out.push('<span class="' + cls + '">' + esc(line) + '</span>');
+    }
+    if (lines.length > 400) out.push('<span>... ' + (lines.length - 400) + ' more lines</span>');
+    return out.join('\n');
+  }
+
+  function renderEvents(events) {
+    var list = $('eventList');
+    $('statShown').textContent = String(events.length);
+    if (!events.length) {
+      list.innerHTML = '<div class="event"><span class="sub">No matching events.</span></div>';
+      return;
+    }
+    var html = [];
+    for (var i = 0; i < events.length; i++) {
+      var ev = events[i];
+      var type = ev.event_type || 'modify';
+      html.push(
+        '<div class="event ' + esc(type) + '" data-id="' + (ev.id || i) + '">' +
+          '<span class="icon">' + (ICONS[type] || '?') + '</span>' +
+          '<span class="time">' + fmtTime(ev.timestamp) + '</span>' +
+          '<span class="path">' + esc(ev.path) + '</span>' +
+          fmtSize(ev) +
+          '<div class="eventDetail">' +
+            (ev.diff
+              ? '<pre>' + renderDiffHtml(ev.diff) + '</pre>'
+              : '<div class="meta">No diff recorded for this event' +
+                (type === 'create' ? ' (new file)' : type === 'delete' ? ' (file removed)' : '.') +
+                '</div>') +
+            '<div class="meta">event #' + (ev.id || '?') + ' &middot; ' + esc(type) +
+              (ev.hash_after ? ' &middot; hash ' + esc(ev.hash_after) : '') + '</div>' +
+          '</div>' +
+        '</div>');
+    }
+    list.innerHTML = html.join('');
+    var rows = list.querySelectorAll('.event');
+    for (var j = 0; j < rows.length; j++) {
+      rows[j].addEventListener('click', function () {
+        var d = this.querySelector('.eventDetail');
+        if (d) d.classList.toggle('open');
+      });
+    }
+  }
+
+  function setConn(ok, msg) {
+    var el = $('connState');
+    el.textContent = ok ? 'ledger connected (local)' : (msg || 'ledger unreachable');
+    el.style.color = ok ? 'var(--green)' : 'var(--red)';
+  }
+
+  function loadStats() {
+    fetch('/api/stats').then(function (r) { return r.json(); }).then(function (s) {
+      $('statProjects').textContent = String(s.projects);
+      $('statTotal').textContent = String(s.totalEvents);
+      $('statToday').textContent = String(s.today);
+      setConn(true);
+    }).catch(function (e) { setConn(false, String(e)); });
+  }
+
+  function loadEvents() {
+    var params = new URLSearchParams();
+    if (state.type) params.set('type', state.type);
+    if (state.project && state.project.id) params.set('project', String(state.project.id));
+    fetch('/api/events?' + params.toString())
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        state.events = data.events || [];
+        $('listHead').textContent = 'events (' + (data.total || 0) + ' total)';
+        renderEvents(state.events);
+        setConn(true);
+      })
+      .catch(function (e) { setConn(false, String(e)); });
+  }
+
+  function loadProjects() {
+    fetch('/api/projects').then(function (r) { return r.json(); }).then(function (data) {
+      var ps = data.projects || [];
+      var label = $('projectLabel');
+      if (ps.length === 1) {
+        state.project = ps[0];
+        label.textContent = ps[0].name + ' — ' + ps[0].root_path;
+      } else if (ps.length > 1) {
+        label.textContent = ps.length + ' projects (latest: ' + ps[0].name + ')';
+        state.project = ps[0];
+      } else {
+        label.textContent = 'no projects tracked — run "actis init"';
+      }
+    }).catch(function () {});
+  }
+
+  function ask() {
+    var q = $('queryInput').value.trim();
+    if (!q) return;
+    var params = new URLSearchParams({ q: q });
+    if (state.project && state.project.id) params.set('project', String(state.project.id));
+    fetch('/api/query?' + params.toString())
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) { setConn(false, data.error); return; }
+        state.events = data.events || [];
+        renderEvents(state.events);
+        $('listHead').textContent = 'answer: ' + (data.total || 0) + ' matching events';
+        if (data.project) {
+          $('projectLabel').textContent = data.project.name + ' — ' + data.project.root_path;
+        }
+        var box = $('parsedBox');
+        box.classList.remove('hidden');
+        $('parsedPre').textContent = JSON.stringify(data.parsed, null, 2);
+      })
+      .catch(function (e) { setConn(false, String(e)); });
+  }
+
+  $('askBtn').addEventListener('click', ask);
+  $('queryInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') ask();
+  });
+  $('allBtn').addEventListener('click', function () {
+    $('queryInput').value = '';
+    $('parsedBox').classList.add('hidden');
+    state.type = '';
+    var pills = document.querySelectorAll('.pill');
+    for (var i = 0; i < pills.length; i++) {
+      pills[i].classList.toggle('active', pills[i].getAttribute('data-type') === '');
+    }
+    loadEvents();
+  });
+
+  var pills = document.querySelectorAll('.pill');
+  for (var i = 0; i < pills.length; i++) {
+    pills[i].addEventListener('click', function () {
+      state.type = this.getAttribute('data-type') || '';
+      var all = document.querySelectorAll('.pill');
+      for (var j = 0; j < all.length; j++) {
+        all[j].classList.toggle('active', all[j] === this);
+      }
+      loadEvents();
+    });
+  }
+
+  loadProjects();
+  loadStats();
+  loadEvents();
+  setInterval(loadStats, 30000);
+})();
+</script>
+</body>
+</html>
