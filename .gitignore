@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .e2e-sandbox/
+.actis/
 *.log
 *.tmp
 .DS_Store

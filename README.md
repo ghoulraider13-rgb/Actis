@@ -96,13 +96,18 @@ All data stays on your machine; the server only reads the local `~/.actis/ledger
                                     └─────────────┘
 ```
 
-- **Watcher**: Uses `chokidar` with 500ms debouncing to batch rapid changes
+- **Watcher**: Uses `chokidar` with 500ms debouncing to batch rapid changes. On
+  Linux `/mnt/` paths (WSL drives) it automatically switches to polling —
+  inotify does not fire across the 9p mount.
 - **Storage**: SQLite (via `sql.js`, pure JS) with indexes on project, time, and path
 - **Diffs**: Computed via `diff` library (line-level for readability)
 - **Queries**: Parsed with rule-based NLP (no external API calls)
 - **Web**: Plain `http` module, serves `public/` as static assets + `/api/*` JSON
 
 ## Data Stored
+
+Data home: `~/.actis` (override with the `ACTIS_HOME` environment variable —
+tests use this to isolate the ledger).
 
 Each event records:
 - Project ID, file path (relative), event type (create/modify/delete/rename)
@@ -133,8 +138,17 @@ Override via `WatcherConfig.ignorePatterns` in code or extend the CLI.
 npm run dev       # tsx watch on CLI
 npm run web:dev   # tsx watch on web server
 npm run build     # tsc → dist/
-npm run test      # vitest (no tests written yet)
+npm run test      # vitest — 34 tests (watcher, diff, query parser)
 ```
+
+## WSL / Windows drives (mnt paths)
+
+Inotify events do not cross the WSL 9p mount, so watching `/mnt/c/...` from WSL
+requires polling. Actis turns polling on **automatically** for `/mnt/` paths on
+Linux; override with `actis watch --poll` / `--no-poll`, tune with
+`--poll-interval <ms>` (default 1000). Verified against a real `/mnt/c`
+directory: creates and modifies are captured (delete capture is verified on
+native filesystems).
 
 ## License
 
