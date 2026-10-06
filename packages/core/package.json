@@ -1,0 +1,63 @@
+{
+  "name": "@actis/core",
+  "version": "0.1.0",
+  "description": "Core library for actis: watcher, diffing, SQLite storage, query parser",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./query": {
+      "types": "./dist/query.d.ts",
+      "import": "./dist/query.js",
+      "require": "./dist/query.cjs"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ghoulraider13-rgb/Actis.git"
+  },
+  "author": "Ash",
+  "license": "MIT",
+  "homepage": "https://github.com/ghoulraider13-rgb/Actis#readme",
+  "bugs": {
+    "url": "https://github.com/ghoulraider13-rgb/Actis/issues"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "chokidar": "^3.6.0",
+    "date-fns": "^3.6.0",
+    "diff": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/diff": "^5.0.9",
+    "@types/node": "^20.12.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^1.5.0"
+  },
+  "peerDependencies": {
+    "sql.js": "^1.10.3"
+  }
+}

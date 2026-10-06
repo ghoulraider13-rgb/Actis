@@ -2,48 +2,25 @@
   "name": "actis",
   "version": "0.1.0",
   "description": "Local-first activity ledger for your filesystem",
-  "type": "module",
-  "main": "dist/index.js",
-  "bin": {
-    "actis": "dist/cli.js"
-  },
+  "private": true,
   "scripts": {
-    "build": "tsc",
-    "dev": "tsx watch src/cli.ts",
-    "start": "node dist/cli.js",
-    "web": "node dist/server.js",
-    "web:dev": "tsx src/server.ts",
-    "watch": "tsx src/watcher.ts",
-    "query": "tsx src/query.ts",
-    "test": "vitest run"
+    "build": "pnpm --filter=@actis/core --filter=@actis/cli --filter=@actis/site run build",
+    "test": "pnpm --filter=@actis/core run test",
+    "lint": "pnpm --filter=@actis/core --filter=@actis/cli --filter=@actis/site run lint",
+    "dev:cli": "pnpm --filter=@actis/cli run dev",
+    "dev:site": "pnpm --filter=@actis/site run dev",
+    "cli": "pnpm --filter=@actis/cli run start --",
+    "web": "pnpm --filter=@actis/cli run web",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "pnpm build && changeset publish"
   },
-  "keywords": [
-    "filesystem",
-    "activity",
-    "ledger",
-    "local-first",
-    "changelog"
-  ],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "better-sqlite3": "^13.0.3",
-    "chalk": "^5.3.0",
-    "chokidar": "^3.6.0",
-    "commander": "^12.1.0",
-    "date-fns": "^3.6.0",
-    "diff": "^5.2.0",
-    "natural": "^6.10.4",
-    "ora": "^8.0.1",
-    "sql.js": "^1.10.3"
+  "engines": {
+    "node": ">=22"
   },
+  "packageManager": "pnpm@9.12.0",
   "devDependencies": {
-    "@types/better-sqlite3": "^9.6.0",
-    "@types/diff": "^5.0.9",
-    "@types/node": "^20.12.0",
-    "@types/sql.js": "^1.4.7",
-    "tsx": "^4.7.0",
-    "typescript": "^5.4.0",
-    "vitest": "^1.5.0"
+    "@changesets/cli": "^2.27.9",
+    "typescript": "^5.6.0"
   }
 }

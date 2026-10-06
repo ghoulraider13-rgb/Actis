@@ -5,8 +5,9 @@ import { createServer } from 'http';
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { getDb, queryEvents, getActiveProjects, closeDb } from './db.js';
-import { parseNaturalQuery, executeQuery } from './query.js';
+import { getDb, queryEvents, getActiveProjects, closeDb } from '@actis/core';
+import { parseNaturalQuery } from '@actis/core';
+import { executeQuery as executeQueryCore } from '@actis/core';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -42,6 +43,36 @@ function json(res: import('http').ServerResponse, status: number, data: unknown)
     'Cache-Control': 'no-store',
   });
   res.end(body);
+}
+
+// CLI-specific executeQuery that uses the actual database
+async function executeQuery(parsed: any, projectRoot?: string): Promise<{ events: any[]; total: number; project: any | undefined }> {
+  let project: any | undefined;
+
+  if (projectRoot) {
+    const proj = await getActiveProjects();
+    const match = proj.find((p) => p.root_path === projectRoot);
+    if (match) project = match;
+  }
+
+  if (!project) {
+    const projects = await getActiveProjects();
+    project = projects[0];
+  }
+
+  if (!project) {
+    return { events: [], total: 0, project: undefined };
+  }
+
+  const result = await queryEvents(project.id!, {
+    since: parsed.since,
+    until: parsed.until,
+    path: parsed.path,
+    eventType: parsed.eventType,
+    limit: parsed.limit || 100,
+  });
+
+  return { ...result, project };
 }
 
 async function handleApi(
@@ -110,8 +141,7 @@ async function handleApi(
       stats.today = (stats.today as number) + today.total;
       for (const t of ['create', 'modify', 'delete', 'rename'] as const) {
         const r = await queryEvents(p.id!, { eventType: t, limit: 1 });
-        (stats.byType as Record<string, number>)[t] +=
-          r.total;
+        (stats.byType as Record<string, number>)[t] += r.total;
       }
     }
     void db;

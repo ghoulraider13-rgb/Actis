@@ -7,15 +7,20 @@ export function computeHash(content: string): string {
 }
 
 export function computeDiff(oldContent: string, newContent: string): string {
-  // Use line-based diff for readability
+  // Use line-based diff for readability. Prefix EVERY line of a part, not just
+  // the first — a part like "+c\nd\n" would otherwise hide "d" from
+  // summarizeDiff and look like an unchanged line.
   const parts = diffLines(oldContent, newContent);
   return parts
     .map(part => {
-      if (part.added) return `+${part.value}`;
-      if (part.removed) return `-${part.value}`;
-      return ` ${part.value}`;
+      const prefix = part.added ? '+' : part.removed ? '-' : ' ';
+      return part.value
+        .replace(/\n$/, '')
+        .split('\n')
+        .map(line => prefix + line)
+        .join('\n');
     })
-    .join('')
+    .join('\n')
     .trim();
 }
 

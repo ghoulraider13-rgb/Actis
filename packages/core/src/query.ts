@@ -1,7 +1,8 @@
 // Query engine with natural language parsing
-import { queryEvents, getProjectByPath, getActiveProjects, FileEvent, Project } from './db.js';
+// Browser-safe: no Node-only imports
+import type { FileEvent, Project } from './types.js';
 import { format } from 'date-fns';
-import { parse, differenceInDays, startOfDay, endOfDay } from 'date-fns';
+import { parse, startOfDay, endOfDay } from 'date-fns';
 
 export interface ParsedQuery {
   since?: number;
@@ -26,6 +27,15 @@ export function parseNaturalQuery(query: string, projectRoot?: string): ParsedQu
   if (sinceMatch) {
     const timeStr = sinceMatch[1].trim();
     result.since = parseTimeExpression(timeStr);
+  } else {
+    // Bare "last week" / "last 3 days" / "yesterday" without the word "since"
+    // still means a lower time bound ("deleted files last week").
+    const bare = lower.match(
+      /(?:^|\s)(last\s+(?:\d+\s+)?(?:day|week|month)s?|yesterday|today|\d+\s*(?:day|week|month|hour)s?\s+ago)(?:\s|$)/,
+    );
+    if (bare) {
+      result.since = parseTimeExpression(bare[1]);
+    }
   }
 
   // "until Friday", "before yesterday"
@@ -35,17 +45,21 @@ export function parseNaturalQuery(query: string, projectRoot?: string): ParsedQu
     result.until = parseTimeExpression(timeStr, true);
   }
 
-  // "in src/", "in the config folder"
-  const pathMatch = lower.match(/(?:in|under|inside)\s+([\w\/\-\.]+)/);
+  // "in src/", "in the src folder" — but "in my project" is not a path.
+  const pathMatch = lower.match(
+    /(?:in|under|inside)\s+(?:the\s+)?(?!my\b|this\b|project\b)([\w\-\.\/]+?)(?:\s+folder\b)?(?:\s|$)/,
+  );
   if (pathMatch) {
-    result.path = pathMatch[1];
+    result.path = pathMatch[1].replace(/\/+$/, '');
   }
 
-  // Event type filters
-  if (/\b(new|created|added)\b/.test(lower)) result.eventType = 'create';
-  else if (/\b(modified|changed|edited|updated)\b/.test(lower)) result.eventType = 'modify';
-  else if (/\b(deleted|removed)\b/.test(lower)) result.eventType = 'delete';
-  else if (/\b(renamed|moved)\b/.test(lower)) result.eventType = 'rename';
+  // Event type filters — "what changed" means everything, not just modify.
+  if (!/\bwhat\s+(?:was\s+|has\s+)?changed\b/.test(lower)) {
+    if (/\b(new|created|added)\b/.test(lower)) result.eventType = 'create';
+    else if (/\b(modified|edited|updated)\b/.test(lower)) result.eventType = 'modify';
+    else if (/\b(deleted|removed)\b/.test(lower)) result.eventType = 'delete';
+    else if (/\b(renamed|moved)\b/.test(lower)) result.eventType = 'rename';
+  }
 
   // Limit
   const limitMatch = lower.match(/(?:top|first|last|latest)\s+(\d+)/);
@@ -114,45 +128,27 @@ function parseTimeExpression(expr: string, isEnd = false): number {
   }
 }
 
-export async function executeQuery(parsed: ParsedQuery, projectRoot?: string): Promise<{ events: FileEvent[]; total: number; project: Project | undefined }> {
-  let project: Project | undefined;
-
-  if (projectRoot) {
-    const proj = await getProjectByPath(projectRoot);
-    if (proj) project = proj;
-  }
-
-  if (!project) {
-    // Default to first active project
-    const projects = await getActiveProjects();
-    project = projects[0];
-  }
-
-  if (!project) {
-    return { events: [], total: 0, project: undefined };
-  }
-
-  const result = await queryEvents(project.id!, {
-    since: parsed.since,
-    until: parsed.until,
-    path: parsed.path,
-    eventType: parsed.eventType,
-    limit: parsed.limit || 100,
-  });
-
-  return { ...result, project };
+// This function is not browser-safe (uses @actis/core/db) - only used by CLI
+// The browser demo imports the types and parseNaturalQuery only
+export async function executeQuery(
+  parsed: ParsedQuery,
+  projectRoot?: string
+): Promise<{ events: FileEvent[]; total: number; project: Project | undefined }> {
+  // This is a placeholder - the CLI version will override this
+  // The actual implementation is in packages/cli/src/query-cli.ts
+  return { events: [], total: 0, project: undefined };
 }
 
 export function formatEvent(event: FileEvent, projectRoot: string): string {
   const time = format(new Date(event.timestamp), 'yyyy-MM-dd HH:mm:ss');
-  const typeIcon = {
+  const typeIcon: Record<string, string> = {
     create: '🟢',
     modify: '🟡',
     delete: '🔴',
     rename: '🔵',
-  }[event.event_type] || '⚪';
+  };
 
-  let line = `${typeIcon} [${time}] ${event.path}`;
+  let line = `${typeIcon[event.event_type] || '⚪'} [${time}] ${event.path}`;
   if (event.size_before !== undefined && event.size_after !== undefined) {
     const diff = event.size_after - event.size_before;
     const sign = diff >= 0 ? '+' : '';
