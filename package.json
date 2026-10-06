@@ -28,6 +28,7 @@
     "dev:site": "pnpm --filter=@actis/site run dev",
     "cli": "pnpm --filter=@actis/cli run start --",
     "web": "pnpm --filter=@actis/cli run web",
+    "build:vercel": "tsc && cp -r public dist/",
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm build && changeset publish"
@@ -37,4 +38,3 @@
     "typescript": "^5.6.0"
   }
 }
-
