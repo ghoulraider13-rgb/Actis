@@ -6,6 +6,8 @@ import { createProject, getProjectByPath, getActiveProjects, closeDb, queryEvent
 import { createWatcher } from '@actis/core';
 import { parseNaturalQuery, formatEventsForDisplay, ParsedQuery } from '@actis/core';
 import { executeQuery } from './query-cli.js';
+import { parseQueryWithLLMFallback, type LLMQueryOptions } from '@actis/core/llm-query';
+import { gcCommand } from './gc.js';
 import * as chrono from 'chrono-node';
 
 program
@@ -80,9 +82,33 @@ program
   .option('--until <date>', 'End time (ISO or natural language)')
   .option('--json', 'Output as JSON')
   .option('--explain', 'Show how the query was parsed')
+  .option('--llm', 'Force LLM-based query translation (requires Ollama)')
+  .option('--no-llm', 'Force rule-based query translation (default)')
   .action(async (question: string, options?: any) => {
     const projectPath = options?.project ? resolve(options.project) : process.cwd();
-    let parsed = parseNaturalQuery(question, projectPath);
+
+    // Determine which parser to use
+    const useLLM = options?.llm === true;
+    const useRuleParser = options?.llm === false;
+
+    // If neither flag is set, check env var
+    let llmEnabled = process.env.ACTIS_LLM_ENABLED === 'true';
+    if (useLLM) llmEnabled = true;
+    if (useRuleParser) llmEnabled = false;
+
+    const llmOptions: LLMQueryOptions = {
+      baseUrl: process.env.ACTIS_OLLAMA_URL || undefined,
+      model: process.env.ACTIS_OLLAMA_MODEL || undefined,
+      timeout: 5000,
+    };
+
+    // Parse with LLM fallback
+    const { parsed, usedLLM } = await parseQueryWithLLMFallback(
+      question,
+      (q) => parseNaturalQuery(q, projectPath),
+      llmOptions,
+      llmEnabled
+    );
 
     // Apply explicit time bounds
     if (options?.since) {
@@ -98,6 +124,11 @@ program
     if (options?.explain) {
       console.log(chalk.cyan('\nParsed query:'));
       console.log(JSON.stringify(parsed, null, 2));
+      if (usedLLM) {
+        console.log(chalk.green('\n(Translated via Ollama LLM)'));
+      } else {
+        console.log(chalk.gray('\n(Translated via rule parser)'));
+      }
       return;
     }
 
@@ -109,13 +140,19 @@ program
     }
 
     if (options?.json) {
-      console.log(JSON.stringify(result, null, 2));
+      console.log(JSON.stringify({ ...result, usedLLM }, null, 2));
       return;
     }
 
     console.log(chalk.cyan(`\nQuery: "${question}"`));
     console.log(chalk.cyan(`Project: ${result.project.name} (${result.project.root_path})`));
-    console.log(chalk.cyan(`Results: ${result.total} total\n`));
+    console.log(chalk.cyan(`Results: ${result.total} total`));
+    if (usedLLM) {
+      console.log(chalk.green('Mode: LLM (Ollama)'));
+    } else {
+      console.log(chalk.gray('Mode: Rule parser'));
+    }
+    console.log();
 
     if (result.events.length === 0) {
       console.log(chalk.gray('No matching events.'));
@@ -297,13 +334,23 @@ program
   });
 
 program
-  .command('prune')
-  .description('Remove events older than a given duration')
-  .option('-p, --project <path>', 'Project path')
-  .option('-o, --older-than <duration>', 'Duration (e.g., 30d, 6m, 1y)', '1y')
-  .option('--dry-run', 'Show what would be deleted without deleting')
-  .action(async (options?: { project?: string; olderThan?: string; dryRun?: boolean }) => {
-    console.log(chalk.yellow('Prune command not yet implemented.'));
+  .command('gc')
+  .description('Garbage collect old events and diffs per retention policy')
+  .option('-p, --project <path>', 'Project path (defaults to current directory)')
+  .option('--keep-days <n>', 'Delete events older than N days', '365')
+  .option('--keep-diffs-days <n>', 'Null out diffs older than N days (but keep events)', '90')
+  .option('--max-diffs-per-file <n>', 'Max diffs to keep per file (oldest diffs nulled)')
+  .option('--dry-run', 'Show what would be deleted/nulled without doing it')
+  .option('--json', 'Output as JSON')
+  .action(async (options?: any) => {
+    await gcCommand({
+      projectPath: options?.project,
+      keepDays: options?.keepDays ? parseInt(options.keepDays, 10) : 365,
+      keepDiffsDays: options?.keepDiffsDays ? parseInt(options.keepDiffsDays, 10) : 90,
+      maxDiffsPerFile: options?.maxDiffsPerFile ? parseInt(options.maxDiffsPerFile, 10) : undefined,
+      dryRun: options?.dryRun ?? false,
+      json: options?.json ?? false,
+    });
   });
 
 program
