@@ -6,6 +6,7 @@ import { createProject, getProjectByPath, getActiveProjects, closeDb, queryEvent
 import { createWatcher } from '@actis/core';
 import { parseNaturalQuery, formatEventsForDisplay, ParsedQuery } from '@actis/core';
 import { executeQuery } from './query-cli.js';
+import { startDaemon, stopDaemon, getDaemonStatus } from './daemon.js';
 import * as chrono from 'chrono-node';
 
 program
@@ -40,6 +41,7 @@ program
   .option('--no-poll', 'Disable automatic /mnt polling')
   .option('--poll-interval <ms>', 'Polling interval in ms', '1000')
   .option('--rescan', 'Rescan project on start to catch changes made while watcher was off')
+  .option('--daemon', 'Run as background daemon')
   .action(async (path?: string, options?: any) => {
     const projectPath = resolve(path || process.cwd());
     const project = await getProjectByPath(projectPath);
@@ -47,6 +49,24 @@ program
     if (!project) {
       console.error(chalk.red(`No project found at ${projectPath}. Run 'actis init <name> [path]' first.`));
       process.exit(1);
+    }
+
+    if (options?.daemon) {
+      try {
+        const result = await startDaemon({
+          projectPath,
+          projectName: project.name,
+          debounceMs: parseInt(options?.debounce || '500', 10),
+          usePolling: options?.poll === true ? true : options?.poll === false ? false : undefined,
+          pollingIntervalMs: parseInt(options?.pollInterval || '1000', 10),
+          rescanOnStart: options?.rescan ?? false,
+        });
+        console.log(chalk.green(`Daemon started (PID ${result.pid}) watching "${project.name}" at ${projectPath}`));
+        return;
+      } catch (error) {
+        console.error(chalk.red('Failed to start daemon:'), error);
+        process.exit(1);
+      }
     }
 
     const watcher = await createWatcher({
@@ -211,23 +231,53 @@ program
       process.exit(1);
     }
 
-    // TODO: Implement daemon with PID file and logging
-    console.log(chalk.yellow('Daemon mode not yet implemented. Use "actis watch" for now.'));
-    console.log('See docs/systemd/actis.service and docs/launchd/com.actis.daemon.plist for service files.');
+    try {
+      const result = await startDaemon({
+        projectPath,
+        projectName: project.name,
+        debounceMs: parseInt(options?.debounce || '500', 10),
+        usePolling: options?.poll === true ? true : options?.poll === false ? false : undefined,
+        pollingIntervalMs: parseInt(options?.pollInterval || '1000', 10),
+        rescanOnStart: options?.rescan ?? false,
+      });
+      console.log(chalk.green(`Daemon started (PID ${result.pid}) watching "${project.name}" at ${projectPath}`));
+    } catch (error) {
+      console.error(chalk.red('Failed to start daemon:'), error);
+      process.exit(1);
+    }
   });
 
 program
   .command('stop')
   .description('Stop the actis daemon')
   .action(async () => {
-    console.log(chalk.yellow('Daemon mode not yet implemented.'));
+    const result = await stopDaemon();
+    if (result.success) {
+      console.log(chalk.green(`Stopped daemon (PID ${result.pid})`));
+    } else {
+      console.error(chalk.red(result.error));
+      process.exit(1);
+    }
   });
 
 program
   .command('status')
   .description('Show daemon status')
   .action(async () => {
-    console.log(chalk.yellow('Daemon mode not yet implemented.'));
+    const status = getDaemonStatus();
+    if (status.running) {
+      const uptimeSec = Math.floor((status.uptimeMs || 0) / 1000);
+      const hours = Math.floor(uptimeSec / 3600);
+      const minutes = Math.floor((uptimeSec % 3600) / 60);
+      const seconds = uptimeSec % 60;
+      let uptimeStr = '';
+      if (hours > 0) uptimeStr += `${hours}h `;
+      if (minutes > 0 || hours > 0) uptimeStr += `${minutes}m `;
+      uptimeStr += `${seconds}s`;
+      console.log(chalk.green(`actis daemon: RUNNING (PID ${status.pid}) watching "${status.projectName}" at ${status.projectPath}, uptime ${uptimeStr.trim()}`));
+    } else {
+      console.log(chalk.yellow('actis daemon: STOPPED'));
+    }
   });
 
 program
@@ -349,8 +399,13 @@ program
     console.log();
   });
 
-program.parse();
+// When spawned as a `daemon-worker` subprocess, daemon.ts runs the watcher
+// directly. In that mode the CLI must not parse argv (commander would reject
+// the unknown `daemon-worker` sentinel command).
+if (process.argv[2] !== 'daemon-worker') {
+  program.parse();
 
-if (!process.argv.slice(2).length) {
-  program.outputHelp();
+  if (!process.argv.slice(2).length) {
+    program.outputHelp();
+  }
 }
