@@ -1,102 +1,161 @@
-# Actis — Deferred Ideas Backlog
+# Actis — Backlog
 
-Captured from [Brief.md](../Brief.md) item 6. These are explicitly deferred to keep the core deliverable focused on daemon lifecycle, retention/GC, local-LLM translator, and CI. Each item includes a rough complexity estimate and the reason it was deferred.
+Deferred ideas for Actis, captured from `Brief.md` item 6. None of these are
+part of the current hardening milestone; they are recorded here so they are
+not lost and can be scheduled deliberately later.
+
+Complexity scale (matches `docs/plans/`):
+- **S** — Small: < 1 week, minimal or no new deps, touches ≤ 2 files.
+- **M** — Medium: 1–3 weeks, may need 1–2 new deps, touches 3–6 files.
+- **L** — Large: > 3 weeks, architectural impact, multiple new deps or core changes.
+
+## Summary
+
+| # | Idea | Complexity | Reason deferred (short) |
+|---|------|------------|-------------------------|
+| 1 | Export formats | M | Needs the stable storage/query layer to land first |
+| 2 | Replay | L | Depends on reliable stored diffs + daemon lifecycle |
+| 3 | Git-aware mode | L | Needs git integration and stable ignore semantics |
+| 4 | Fuzzy path queries | M | Rule parser must be frozen and deterministic first |
+| 5 | `.actisignore` (full semantics) | S | Basic parsing exists; full gitignore semantics are lower priority |
+| 6 | `--on-change` hooks | M | Arbitrary command execution needs sandboxing/UX design |
+| 7 | Time-bucketed summaries | S | Weekly summary exists; generalizing is a nice-to-have |
+| 8 | Snapshot diff between two timestamps | M | Depends on retained per-file diffs and GC landing |
 
 ---
 
-## Complexity Scale
+## 1. Export formats
 
-| Rating | Meaning |
-|--------|---------|
-| **S** (Small) | < 1 week, minimal new deps, touches ≤ 2 files |
-| **M** (Medium) | 1–3 weeks, may need 1–2 new deps, touches 3–6 files |
-| **L** (Large) | > 3 weeks, architectural impact, multiple new deps or core changes |
+**Description.** Let users export ledger data out of SQLite into portable
+formats — at minimum JSON (round-trippable via `actis import`), CSV (spreadsheet
+analysis), and Markdown (human-readable reports). Should support filtering by
+project, path and time range, and stream large exports rather than buffering the
+whole result set.
 
----
+**Complexity.** M
 
-## 1. Export Formats
-
-**Description:** Add CLI commands to export ledger data as JSON, CSV, or SQLite dump for external analysis or backup.
-
-**Complexity:** **S**
-
-**Reason deferred:** Core deliverables (daemon, retention, CI) must ship first. Export is a standalone convenience feature with no architectural impact — can be added later without touching the watcher or storage layer.
+**Reason deferred.** Export is a presentation layer over the storage and query
+systems. The on-disk SQLite backend (WAL), the daemon lifecycle and retention/GC
+are the higher-priority items in the Brief's Definition of Done; the schema and
+query surface should be stable before we freeze an export format.
 
 ---
 
 ## 2. Replay
 
-**Description:** Re-apply recorded filesystem events against a fresh directory to reconstruct state, useful for disaster recovery or reproducing bugs.
+**Description.** Reconstruct the timeline of a project — or a single file — by
+replaying recorded events and their diffs between two points in time, either as
+a scrollable CLI/TUI walkthrough or as a machine-readable stream. A building
+block for "what did this look like at commit X / last Tuesday?".
 
-**Complexity:** **M**
+**Complexity.** L
 
-**Reason deferred:** Requires a deterministic event ordering guarantee and idempotent application logic. The current watcher debounce and batching semantics need to be hardened first (part of daemon lifecycle work). Replay also overlaps with the snapshot diff idea — doing both together would be cleaner.
-
----
-
-## 3. Git-Aware Mode
-
-**Description:** Correlate ledger events with git commits (branch, commit hash, author) so queries can filter by "what changed in commit X" or "activity on branch Y".
-
-**Complexity:** **M**
-
-**Reason deferred:** Depends on the watcher reliably detecting `.git` directories and reading commit metadata without slowing down the hot path. This is a cross-cutting concern that touches the watcher, storage schema, and query parser — best tackled after the core daemon is stable and the query layer is exercised in CI.
+**Reason deferred.** Replay is only as trustworthy as the stored diffs it reads;
+it depends on the SQLite backend reliably persisting diffs and on GC/retention
+deciding how long those diffs survive. It is an architectural feature, not a
+quick add-on, and sits beyond the current hardening milestone.
 
 ---
 
-## 4. Fuzzy Path Queries
+## 3. Git-aware mode
 
-**Description:** Extend the query parser to support glob-like or Levenshtein-distance path matching (e.g., `path ~ "src/**/*.ts"` or `path ≈ "config.json"`).
+**Description.** Correlate filesystem events with git state: attribute changes
+to commits/branches, mark events as "dirty" vs "committed", surface the branch a
+change landed on, and expose queries like `actis query "files changed on
+feat/x last week"`.
 
-**Complexity:** **S**
+**Complexity.** L
 
-**Reason deferred:** The current rule parser is intentionally minimal and deterministic. Fuzzy matching adds algorithmic complexity and a potential dependency (e.g., `fast-levenshtein`). Deferred until the parser has real-world usage data showing the need.
-
----
-
-## 5. .actisignore
-
-**Description:** A `.actisignore` file (gitignore-style patterns) to exclude noisy paths (node_modules, build output, vendor dirs) from the watcher without CLI flags.
-
-**Complexity:** **S**
-
-**Reason deferred:** The watcher already supports `--ignore` patterns via CLI. A file-based mechanism is a UX improvement, not a functional gap. Deferred to avoid scope creep on the daemon lifecycle work; can be layered on top once the daemon is proven stable.
+**Reason deferred.** Requires shelling out to git (or a git library), a clear
+policy for `.git/` handling (already ignored by default) and provenance
+semantics that must not lie when the repo is dirty or mid-rebase. It depends on
+stable ignore handling and the query layer, and adds a non-trivial dependency
+surface, so it is out of the current milestone.
 
 ---
 
-## 6. --on-change Hooks
+## 4. Fuzzy path queries
 
-**Description:** Execute a user-defined command (shell script, webhook, local binary) when matching events occur, enabling custom reactions (notify, rebuild, sync).
+**Description.** Allow approximate path matching in queries so a mistyped,
+abbreviated or partially remembered path still resolves — e.g. `auth middlware`
+matching `src/auth/middleware.ts`, with ranked results and a confidence score.
 
-**Complexity:** **M**
+**Complexity.** M
 
-**Reason deferred:** Introduces process spawning, timeout handling, and security surface (arbitrary command execution). The Brief explicitly keeps the CLI zero-network and local-first; hooks must be designed to preserve that guarantee. Deferred until after CI gates are in place so hook execution can be tested in the pipeline.
-
----
-
-## 7. Time-Bucketed Summaries
-
-**Description:** Pre-aggregated rollups (hourly, daily, weekly) of event counts, bytes changed, top paths — queryable via `actis summary --bucket day`.
-
-**Complexity:** **M**
-
-**Reason deferred:** Requires a background aggregation job or materialized views in SQLite. The retention/GC task (item 3 in Brief) will define the vacuum/compaction strategy; summaries should share that infrastructure. Doing summaries first risks schema churn.
+**Reason deferred.** The rule parser (`packages/core/src/query.ts`) is
+deliberately deterministic and browser-safe, and the CLI's no-network guarantee
+means any fuzzy matching must be local. Adding fuzzy behaviour on top of an
+unfrozen parser would make results harder to reason about; the parser should be
+stabilized first, with fuzzy matching layered on only when the deterministic
+path is settled.
 
 ---
 
-## 8. Snapshot Diff Between Two Timestamps
+## 5. `.actisignore` (full semantics)
 
-**Description:** `actis diff --since <ts1> --until <ts2>` showing a unified diff of file contents at two points in time, derived from stored diffs.
+**Description.** A project-local ignore file with gitignore-compatible
+semantics: negation (`!pattern`), directory-only rules (`dir/`), anchoring and
+precedence relative to `.gitignore` and the built-in defaults.
 
-**Complexity:** **L**
+**Complexity.** S
 
-**Reason deferred:** Architecturally the largest item. Requires storing forward/reverse diffs efficiently, handling file renames/deletes, and computing transitive diffs across potentially many stored events. The Brief's "Definition of done" prioritizes a working daemon and CI over this advanced query feature. Also explicitly out of scope: a plugin system (which a diff engine might evolve into).
+**Reason deferred.** Partial support already exists — `packages/core/src/ignore.ts`
+reads `.actisignore` and merges it with defaults and `.gitignore`, but it
+currently skips negated (`!`) rules and directory-only markers. The built-in
+secret-safe and no-diff patterns already cover the risky cases, so completing
+full gitignore semantics is a small, low-risk improvement that can wait until
+after the core hardening work.
 
 ---
 
-## Notes
+## 6. `--on-change` hooks
 
-- **No code changes** — this file is documentation only.
-- Items are **not prioritized**; complexity and dependency order suggest a natural sequence if/when capacity opens.
-- The **Definition of done** (daemon, retention, CI, local-LLM translator) and **Out of scope** (plugin system, hosted models) from Brief.md are the governing constraints.
-- When an item is picked up, create a plan in `docs/plans/` following the existing template.
+**Description.** Let `actis watch` run a user-specified command when a matching
+change is detected, e.g. `actis watch --on-change 'make lint' --match 'src/**/*.ts'`,
+passing the changed paths and event types to the hook.
+
+**Complexity.** M
+
+**Reason deferred.** Executing arbitrary user commands from a long-running
+watcher raises real safety and UX questions (debounce/coalescing, quoting,
+failure handling, recursion if the hook writes files, WSL/Windows shell
+differences). It also overlaps with the explicitly out-of-scope "plugin system".
+Needs a dedicated design before implementation.
+
+---
+
+## 7. Time-bucketed summaries
+
+**Description.** Generalize the existing `actis summary` command into
+configurable time buckets (hourly / daily / weekly / monthly) and expose the
+aggregation as a browser-safe core function so the landing page demos and
+dashboards can reuse it instead of each re-implementing grouping.
+
+**Complexity.** S
+
+**Reason deferred.** A weekly summary already exists in `packages/cli/src/cli.ts`
+(grouped by day, then directory), so this is an ergonomic generalization rather
+than missing capability. It is a nice-to-have that should follow the storage and
+retention work, once the underlying query surface is stable.
+
+---
+
+## 8. Snapshot diff between two timestamps
+
+**Description.** Diff an entire project (or a subtree) between two points in
+time: which files were created, modified, deleted or renamed, with per-file line
+counts — a "git diff" over the ledger's own history, independent of any VCS.
+
+**Complexity.** M
+
+**Reason deferred.** Depends on per-file diffs being reliably persisted and on
+retention/GC defining how far back snapshots remain available (once old diffs
+are nulled by `actis gc`, the diff can no longer be produced). It should land
+after the storage backend and GC policy are in place, and it reuses the same
+diff primitives in `packages/core/src/diff.ts`.
+
+---
+
+_All items are documentation only. No implementation is committed for any of
+them as part of this task; see `Brief.md` item 6 and `docs/plans/` for the plan
+that produced this file._
