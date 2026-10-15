@@ -3,3 +3,4 @@ export * from './db.js';
 export * from './diff.js';
 export * from './watcher.js';
 export * from './query.js';
+export * from './retention.js';
