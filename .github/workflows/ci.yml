@@ -21,12 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Visual Studio with C++ workload (Windows)
+      - name: Setup MSVC dev environment (Windows)
         if: runner.os == 'Windows'
-        uses: microsoft/setup-vs@v1
-        with:
-          vs-version: 'latest'
-          workload: 'VCTools'
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
