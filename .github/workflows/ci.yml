@@ -21,6 +21,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Visual Studio Build Tools (Windows)
+        if: runner.os == 'Windows'
+        uses: microsoft/setup-msbuild@v2
+        with:
+          vs-version: 'latest'
+          vs-prerelease: false
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
