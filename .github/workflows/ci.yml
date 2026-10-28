@@ -38,6 +38,8 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          GYP_MSVS_VERSION: "2022"
 
       - name: Build
         run: pnpm run build
