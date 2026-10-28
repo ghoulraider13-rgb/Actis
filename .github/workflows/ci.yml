@@ -40,10 +40,15 @@ jobs:
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-          run: pnpm install --frozen-lockfile
+        shell: pwsh
+        run: |
+          $vsPath = "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvarsall.bat"
+          if (Test-Path $vsPath) {
+            & cmd /c "`"$vsPath`" x64 && pnpm install --frozen-lockfile"
+          } else {
+            Write-Warning "vcvarsall.bat not found at $vsPath"
+            pnpm install --frozen-lockfile
+          }
 
       - name: Install dependencies (macOS/Ubuntu)
         if: runner.os != 'Windows'
