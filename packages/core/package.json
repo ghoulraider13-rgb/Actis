@@ -19,6 +19,16 @@
     "./types": {
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js"
+    },
+    "./llm-query": {
+      "types": "./dist/llm-query.d.ts",
+      "import": "./dist/llm-query.js",
+      "require": "./dist/llm-query.cjs"
+    },
+    "./retention": {
+      "types": "./dist/retention.d.ts",
+      "import": "./dist/retention.js",
+      "require": "./dist/retention.cjs"
     }
   },
   "files": [
