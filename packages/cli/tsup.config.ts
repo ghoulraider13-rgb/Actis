@@ -10,4 +10,7 @@ export default defineConfig({
   external: ['@actis/core'],
   platform: 'node',
   target: 'node22',
+  banner: {
+    js: '#!/usr/bin/env node',
+  },
 });
