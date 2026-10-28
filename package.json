@@ -21,14 +21,11 @@
     "url": "git+https://github.com/ghoulraider13-rgb/Actis.git"
   },
   "scripts": {
-    "build": "pnpm --filter=@actis/core --filter=@actis/cli --filter=@actis/site run build",
+    "build": "pnpm --filter=@actis/core --filter=@actis/cli run build",
     "test": "pnpm --filter=@actis/core run test",
-    "lint": "pnpm --filter=@actis/core --filter=@actis/cli --filter=@actis/site run lint",
+    "lint": "pnpm --filter=@actis/core --filter=@actis/cli run lint",
     "dev:cli": "pnpm --filter=@actis/cli run dev",
-    "dev:site": "pnpm --filter=@actis/site run dev",
     "cli": "pnpm --filter=@actis/cli run start --",
-    "web": "pnpm --filter=@actis/cli run web",
-    "build:vercel": "tsc && cp -r public dist/",
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm build && changeset publish"
