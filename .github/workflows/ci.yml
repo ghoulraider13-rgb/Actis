@@ -43,8 +43,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-        run: |
-          pnpm install --frozen-lockfile
+          run: pnpm install --frozen-lockfile
 
       - name: Install dependencies (macOS/Ubuntu)
         if: runner.os != 'Windows'
