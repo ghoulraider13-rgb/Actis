@@ -11,10 +11,47 @@ import { gcCommand } from './gc.js';
 import { startDaemon, stopDaemon, getDaemonStatus } from './daemon.js';
 import * as chrono from 'chrono-node';
 
+const ACTIS_LOGO = `
+${chalk.cyan('  █████╗  ██████╗ ██████╗ ██╗   ██╗██████╗ ███╗   ██╗███████╗')}
+${chalk.cyan(' ██╔══██╗██╔════╝██╔═══██╗██║   ██║██╔══██╗████╗  ██║██╔════╝')}
+${chalk.cyan(' ███████║██║     ██║   ██║██║   ██║██████╔╝██╔██╗ ██║█████╗  ')}
+${chalk.cyan(' ██╔══██║██║     ██║   ██║██║   ██║██╔═══╝ ██║╚██╗██║██╔══╝  ')}
+${chalk.cyan(' ██║  ██║╚██████╗╚██████╔╝╚██████╔╝██║     ██║ ╚████║███████╗')}
+${chalk.cyan(' ╚═╝  ╚═╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚═╝     ╚═╝  ╚═══╝╚══════╝')}
+${chalk.gray('        Local-first activity ledger for your filesystem')}${chalk.cyan(' v0.1.0')}
+`;
+
+function printBanner() {
+  console.log(ACTIS_LOGO);
+  console.log();
+}
+
+function printSection(title: string) {
+  const line = '─'.repeat(Math.max(40, title.length + 4));
+  console.log(chalk.cyan(`┌${line}┐`));
+  console.log(chalk.cyan(`│  ${chalk.bold(title)}  │`));
+  console.log(chalk.cyan(`└${line}┘`));
+  console.log();
+}
+
+function printKV(label: string, value: string, status?: 'ok' | 'warn' | 'error') {
+  const icon = status === 'ok' ? chalk.green('✓') : status === 'warn' ? chalk.yellow('⚠') : status === 'error' ? chalk.red('✗') : '•';
+  console.log(`  ${icon} ${chalk.bold(label)}: ${value}`);
+}
+
+function printTree(prefix: string, items: string[], lastPrefix = '└─ ') {
+  items.forEach((item, i) => {
+    const isLast = i === items.length - 1;
+    const p = isLast ? lastPrefix : '├─ ';
+    console.log(`${prefix}${chalk.gray(p)}${item}`);
+  });
+}
+
 program
   .name('actis')
   .description('Local-first activity ledger for your filesystem')
-  .version('0.1.0');
+  .version('0.1.0')
+  .hook('preAction', () => printBanner());
 
 program
   .command('init <name> [path]')
@@ -28,7 +65,10 @@ program
         return;
       }
       const project = await createProject(name, projectPath);
-      console.log(chalk.green(`✓ Created project "${project.name}" tracking ${project.root_path}`));
+      printSection('Project Created');
+      printKV('Name', project.name, 'ok');
+      printKV('Path', project.root_path, 'ok');
+      printKV('ID', String(project.id), 'ok');
     } catch (error) {
       console.error(chalk.red('Failed to create project:'), error);
       process.exit(1);
@@ -63,7 +103,10 @@ program
           pollingIntervalMs: parseInt(options?.pollInterval || '1000', 10),
           rescanOnStart: options?.rescan ?? false,
         });
-        console.log(chalk.green(`Daemon started (PID ${result.pid}) watching "${project.name}" at ${projectPath}`));
+        printSection('Daemon Started');
+        printKV('PID', String(result.pid), 'ok');
+        printKV('Project', project.name, 'ok');
+        printKV('Path', projectPath, 'ok');
         return;
       } catch (error) {
         console.error(chalk.red('Failed to start daemon:'), error);
@@ -89,7 +132,13 @@ program
       process.exit(0);
     });
 
-    console.log(chalk.green(`Watching "${project.name}" at ${projectPath}. Press Ctrl+C to stop.`));
+    printSection('Watching');
+    printKV('Project', project.name, 'ok');
+    printKV('Path', projectPath, 'ok');
+    printKV('Mode', 'Foreground (Ctrl+C to stop)', 'ok');
+    if (options?.poll) printKV('Polling', 'Enabled', 'warn');
+    if (options?.rescan) printKV('Rescan on start', 'Yes', 'ok');
+    console.log();
   });
 
 program
@@ -164,14 +213,11 @@ program
       return;
     }
 
-    console.log(chalk.cyan(`\nQuery: "${question}"`));
-    console.log(chalk.cyan(`Project: ${result.project.name} (${result.project.root_path})`));
-    console.log(chalk.cyan(`Results: ${result.total} total`));
-    if (usedLLM) {
-      console.log(chalk.green('Mode: LLM (Ollama)'));
-    } else {
-      console.log(chalk.gray('Mode: Rule parser'));
-    }
+    printSection('Query Results');
+    printKV('Query', `"${question}"`);
+    printKV('Project', `${result.project.name} (${result.project.root_path})`);
+    printKV('Total Results', String(result.total), 'ok');
+    printKV('Mode', usedLLM ? 'LLM (Ollama)' : 'Rule parser', usedLLM ? 'ok' : 'warn');
     console.log();
 
     if (result.events.length === 0) {
@@ -206,10 +252,11 @@ program
       console.log(chalk.gray('No projects tracked yet. Run "actis init <name> [path]" to start.'));
       return;
     }
-    console.log(chalk.cyan('\nTracked Projects:'));
-    for (const p of projects) {
-      console.log(`  ${chalk.green(p.name)} → ${chalk.gray(p.root_path)}`);
-    }
+    printSection('Tracked Projects');
+    projects.forEach((p, i) => {
+      const prefix = i === projects.length - 1 ? '└─ ' : '├─ ';
+      console.log(`  ${chalk.gray(prefix)}${chalk.green.bold(p.name)} ${chalk.gray('→')} ${chalk.gray(p.root_path)}`);
+    });
     console.log();
   });
 
@@ -237,12 +284,17 @@ program
       return;
     }
 
-    console.log(chalk.cyan(`\nHistory for ${filePath} in ${project.name}:`));
+    printSection(`History for ${filePath}`);
+    printKV('Project', project.name, 'ok');
+    printKV('Events', String(events.length), 'ok');
+    console.log();
+
     for (const event of events) {
       const time = new Date(event.timestamp).toLocaleString();
       console.log(`\n  ${chalk.bold(time)} — ${event.event_type.toUpperCase()}`);
       if (event.diff) {
-        console.log(chalk.gray(event.diff.split('\n').slice(0, 20).join('\n')));
+        const lines = event.diff.split('\n').slice(0, 20);
+        console.log(chalk.gray(lines.join('\n')));
         if (event.diff.split('\n').length > 20) {
           console.log(chalk.gray(`  ... (${event.diff.split('\n').length - 20} more lines)`));
         }
@@ -277,7 +329,10 @@ program
         pollingIntervalMs: parseInt(options?.pollInterval || '1000', 10),
         rescanOnStart: options?.rescan ?? false,
       });
-      console.log(chalk.green(`Daemon started (PID ${result.pid}) watching "${project.name}" at ${projectPath}`));
+      printSection('Daemon Started');
+      printKV('PID', String(result.pid), 'ok');
+      printKV('Project', project.name, 'ok');
+      printKV('Path', projectPath, 'ok');
     } catch (error) {
       console.error(chalk.red('Failed to start daemon:'), error);
       process.exit(1);
@@ -290,7 +345,9 @@ program
   .action(async () => {
     const result = await stopDaemon();
     if (result.success) {
-      console.log(chalk.green(`Stopped daemon (PID ${result.pid})`));
+      printSection('Daemon Stopped');
+      printKV('PID', String(result.pid), 'ok');
+      printKV('Status', 'Stopped gracefully', 'ok');
     } else {
       console.error(chalk.red(result.error));
       process.exit(1);
@@ -302,6 +359,7 @@ program
   .description('Show daemon status')
   .action(async () => {
     const status = getDaemonStatus();
+    printSection('Daemon Status');
     if (status.running) {
       const uptimeSec = Math.floor((status.uptimeMs || 0) / 1000);
       const hours = Math.floor(uptimeSec / 3600);
@@ -311,10 +369,15 @@ program
       if (hours > 0) uptimeStr += `${hours}h `;
       if (minutes > 0 || hours > 0) uptimeStr += `${minutes}m `;
       uptimeStr += `${seconds}s`;
-      console.log(chalk.green(`actis daemon: RUNNING (PID ${status.pid}) watching "${status.projectName}" at ${status.projectPath}, uptime ${uptimeStr.trim()}`));
+      printKV('State', 'RUNNING', 'ok');
+      printKV('PID', String(status.pid), 'ok');
+      printKV('Project', status.projectName || 'unknown', 'ok');
+      printKV('Path', status.projectPath || 'unknown', 'ok');
+      printKV('Uptime', uptimeStr.trim(), 'ok');
     } else {
-      console.log(chalk.yellow('actis daemon: STOPPED'));
+      printKV('State', 'STOPPED', 'warn');
     }
+    console.log();
   });
 
 program
@@ -370,8 +433,10 @@ program
       else if (event.event_type === 'rename') dirStats.renames++;
     }
 
-    console.log(chalk.cyan(`\nWeekly Summary: ${project.name} (${weekAgo === 0 ? 'this week' : weekAgo + ' weeks ago'})`));
-    console.log(chalk.cyan(`${weekStart.toLocaleDateString()} - ${new Date(weekEnd.getTime() - 1).toLocaleDateString()}\n`));
+    printSection(`Weekly Summary: ${project.name}`);
+    printKV('Period', `${weekStart.toLocaleDateString()} - ${new Date(weekEnd.getTime() - 1).toLocaleDateString()}`);
+    printKV('Total Events', String(events.length), 'ok');
+    console.log();
 
     for (const [day, dirMap] of byDay) {
       console.log(chalk.bold(day));
@@ -407,14 +472,14 @@ program
   .command('doctor')
   .description('Diagnose actis installation and configuration')
   .action(async () => {
-    console.log(chalk.cyan('\n=== actis doctor ===\n'));
+    printSection('actis doctor');
 
     // Node version
-    console.log(chalk.bold('Node.js:'), process.version);
+    printKV('Node.js', process.version);
     if (parseInt(process.version.slice(1).split('.')[0]) < 22) {
-      console.log(chalk.yellow('  ⚠ Node < 22; better-sqlite3 may not have prebuilds'));
+      printKV('Node >= 22', 'No (prebuilds may be missing)', 'warn');
     } else {
-      console.log(chalk.green('  ✓ Node >= 22'));
+      printKV('Node >= 22', 'Yes', 'ok');
     }
 
     // DB path
@@ -422,27 +487,29 @@ program
     const { join } = await import('path');
     const { existsSync } = await import('fs');
     const dbPath = join(homedir(), '.actis', 'ledger.db');
-    console.log(chalk.bold('Database:'), dbPath);
+    printKV('Database', dbPath);
     if (existsSync(dbPath)) {
       const stats = await import('fs').then(fs => fs.statSync(dbPath));
-      console.log(chalk.green(`  ✓ Exists (${(stats.size / 1024).toFixed(1)} KB)`));
+      printKV('Database Exists', `Yes (${(stats.size / 1024).toFixed(1)} KB)`, 'ok');
     } else {
-      console.log(chalk.yellow('  ⚠ Not found (will be created on first init)'));
+      printKV('Database Exists', 'No (will be created on first init)', 'warn');
     }
 
     // Platform info
-    console.log(chalk.bold('Platform:'), process.platform, process.arch);
+    printKV('Platform', `${process.platform} ${process.arch}`);
     if (process.platform === 'linux' && process.cwd().startsWith('/mnt/')) {
-      console.log(chalk.yellow('  ⚠ Running on WSL /mnt; polling will be used'));
+      printKV('WSL /mnt', 'Detected (polling will be used)', 'warn');
     }
 
     // Projects
     const projects = await getActiveProjects();
-    console.log(chalk.bold('Projects:'), projects.length);
-    for (const p of projects) {
-      console.log(`  - ${p.name} → ${p.root_path}`);
+    printKV('Projects Tracked', String(projects.length));
+    if (projects.length > 0) {
+      projects.forEach((p, i) => {
+        const prefix = i === projects.length - 1 ? '└─ ' : '├─ ';
+        console.log(`  ${chalk.gray(prefix)}${chalk.green(p.name)} ${chalk.gray('→')} ${chalk.gray(p.root_path)}`);
+      });
     }
-
     console.log();
   });
 
