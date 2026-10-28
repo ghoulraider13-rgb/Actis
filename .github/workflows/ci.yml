@@ -40,6 +40,7 @@ jobs:
         run: pnpm install --frozen-lockfile
         env:
           GYP_MSVS_VERSION: "2022"
+          npm_config_build_from_source: "false"
 
       - name: Build
         run: pnpm run build
