@@ -21,16 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install VS C++ workload (Windows)
+      - name: Setup MSBuild (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $vsInstaller = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe"
-          if (Test-Path $vsInstaller) {
-            & $vsInstaller modify --installPath "C:\Program Files\Microsoft Visual Studio\18\Enterprise" --add Microsoft.VisualStudio.Workload.VCTools --quiet --wait --norestart
-          } else {
-            Write-Warning "VS Installer not found at expected location"
-          }
+        uses: microsoft/setup-msbuild@v2
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
