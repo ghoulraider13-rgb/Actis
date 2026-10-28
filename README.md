@@ -13,13 +13,18 @@ A filesystem activity tracker that logs every meaningful change (new files, edit
 ## Installation
 
 ```bash
-# From source (not published to npm)
+# Quick install via Git (no npm publish yet)
+npm install -g git+https://github.com/ghoulraider13-rgb/Actis.git
+
+# Or from source
 git clone https://github.com/ghoulraider13-rgb/Actis.git
 cd Actis
 npm install
 npm run build
 # CLI available as ./dist/cli.js or via npx from repo root
 ```
+
+> **Note**: Package is not yet published to npm. The `git+https://` install works immediately and is the recommended method until first npm publish.
 
 ## Quick Start
 
