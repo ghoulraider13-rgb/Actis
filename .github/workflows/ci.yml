@@ -15,13 +15,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        include:
-          - os: ubuntu-latest
-            node-version: 22
-          - os: macos-latest
-            node-version: 22
-          - os: windows-latest
-            node-version: 20
+        os: [ubuntu-latest, macos-latest, windows-latest]
       fail-fast: false
 
     steps:
@@ -35,23 +29,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
 
-      - name: Install dependencies (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $vsPath = "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvarsall.bat"
-          if (Test-Path $vsPath) {
-            & cmd /c "`"$vsPath`" x64 && pnpm install --frozen-lockfile"
-          } else {
-            Write-Warning "vcvarsall.bat not found at $vsPath"
-            pnpm install --frozen-lockfile
-          }
-
-      - name: Install dependencies (macOS/Ubuntu)
-        if: runner.os != 'Windows'
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build
