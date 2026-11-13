@@ -1,8 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
-import { dirname, resolve, sep } from 'path';
+import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'fs';
+import { basename, dirname, join, resolve, sep } from 'path';
+import { homedir } from 'os';
 import { spawnSync } from 'child_process';
 import { applyPatch, parsePatch } from 'diff';
 import {
+  createProject,
   getActiveProjects,
   getProjectByPath,
   parseNaturalQuery,
@@ -11,6 +13,8 @@ import {
   type ParsedQuery,
   type Project,
 } from '@actis/core';
+import { getDaemonStatus, startDaemon, stopDaemon, type DaemonStatus } from '../daemon.js';
+import { formatEventsExport, type ExportFormat } from '../export.js';
 
 export interface ProjectSummary {
   id: number | string;
@@ -68,6 +72,55 @@ export interface ApplyDiffOutput {
   output: string;
   test_passed: boolean;
   files_changed: string[];
+}
+
+export interface WatchProjectInput {
+  project_path?: string;
+  action: 'start' | 'stop' | 'status';
+  debounce_ms?: number;
+  rescan?: boolean;
+}
+
+export interface WatchProjectOutput {
+  action: 'start' | 'stop' | 'status';
+  success: boolean;
+  pid?: number;
+  project_path?: string;
+  project_name?: string;
+  running?: boolean;
+  uptime_ms?: number;
+  error?: string;
+}
+
+export interface ExportLedgerInput {
+  project_path?: string;
+  format?: ExportFormat;
+  since?: number;
+  until?: number;
+  limit?: number;
+  out_file?: string;
+}
+
+export interface ExportLedgerOutput {
+  project: ProjectSummary | null;
+  format: ExportFormat;
+  total: number;
+  content: string;
+  out_file?: string;
+}
+
+export interface DoctorOutput {
+  node_version: string;
+  node_ok: boolean;
+  actis_home: string;
+  db_path: string;
+  db_exists: boolean;
+  db_size_bytes: number;
+  platform: string;
+  arch: string;
+  is_wsl_mount: boolean;
+  projects: ProjectSummary[];
+  daemon: DaemonStatus;
 }
 
 export const MCP_TOOLS = [
@@ -159,6 +212,75 @@ export const MCP_TOOLS = [
         },
       },
       required: ['diff', 'project_path'],
+    },
+  },
+  {
+    name: 'watch_project',
+    description: 'Control the actis background watcher daemon (start, stop, or check status).',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        project_path: {
+          type: 'string',
+          description: 'Target project root path (required when action is "start")',
+        },
+        action: {
+          type: 'string',
+          enum: ['start', 'stop', 'status'],
+          description: 'Daemon control action',
+        },
+        debounce_ms: {
+          type: 'number',
+          description: 'Optional debounce interval in ms when starting (default 500)',
+        },
+        rescan: {
+          type: 'boolean',
+          description: 'Optional rescan on start (default false)',
+        },
+      },
+      required: ['action'],
+    },
+  },
+  {
+    name: 'export_ledger',
+    description: 'Export ledger events to JSON, CSV, or Markdown format.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        project_path: {
+          type: 'string',
+          description: 'Optional target project root path',
+        },
+        format: {
+          type: 'string',
+          enum: ['json', 'csv', 'md'],
+          description: 'Export format (default "json")',
+        },
+        since: {
+          type: 'number',
+          description: 'Start timestamp in milliseconds since epoch',
+        },
+        until: {
+          type: 'number',
+          description: 'End timestamp in milliseconds since epoch',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of events to export (default 1000, max 5000)',
+        },
+        out_file: {
+          type: 'string',
+          description: 'Optional file path to write the exported output',
+        },
+      },
+    },
+  },
+  {
+    name: 'doctor',
+    description: 'Run diagnostics on the actis environment, database, tracked projects, and daemon.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
     },
   },
 ] as const;
@@ -414,3 +536,135 @@ export async function apply_diff(input: ApplyDiffInput): Promise<ApplyDiffOutput
     files_changed: filesChanged,
   };
 }
+
+export async function watch_project(input: WatchProjectInput): Promise<WatchProjectOutput> {
+  if (!input || !input.action || !['start', 'stop', 'status'].includes(input.action)) {
+    throw new Error('Invalid or missing action. Expected "start", "stop", or "status".');
+  }
+
+  if (input.action === 'status') {
+    const status = getDaemonStatus();
+    return {
+      action: 'status',
+      success: true,
+      running: status.running,
+      pid: status.pid,
+      project_path: status.projectPath,
+      project_name: status.projectName,
+      uptime_ms: status.uptimeMs,
+    };
+  }
+
+  if (input.action === 'stop') {
+    const res = await stopDaemon();
+    return {
+      action: 'stop',
+      success: res.success,
+      pid: res.pid,
+      running: false,
+      error: res.error,
+    };
+  }
+
+  // action === 'start'
+  if (typeof input.project_path !== 'string' || !input.project_path.trim()) {
+    throw new Error('Missing required parameter: project_path when action is "start"');
+  }
+
+  const projectPath = resolve(input.project_path);
+  if (!existsSync(projectPath)) {
+    return {
+      action: 'start',
+      success: false,
+      project_path: projectPath,
+      error: `Project path does not exist: ${projectPath}`,
+    };
+  }
+
+  let project = getProjectByPath(projectPath);
+  if (!project) {
+    project = createProject(basename(projectPath) || 'project', projectPath);
+  }
+
+  const started = await startDaemon({
+    projectPath,
+    projectName: project.name,
+    debounceMs: input.debounce_ms ?? 500,
+    pollingIntervalMs: 1000,
+    rescanOnStart: input.rescan ?? false,
+  });
+
+  return {
+    action: 'start',
+    success: true,
+    pid: started.pid,
+    project_path: started.projectPath,
+    project_name: project.name,
+    running: true,
+  };
+}
+
+export async function export_ledger(input: ExportLedgerInput = {}): Promise<ExportLedgerOutput> {
+  const format: ExportFormat = input.format ?? 'json';
+  if (!['json', 'csv', 'md'].includes(format)) {
+    throw new Error(`Invalid format "${String(format)}". Expected "json", "csv", or "md".`);
+  }
+
+  const limit = clampLimit(input.limit, 1000, 5000);
+  const project = resolveProject(input.project_path);
+  if (!project) {
+    return {
+      project: null,
+      format,
+      total: 0,
+      content: '',
+    };
+  }
+
+  const { events } = queryEvents(project.id!, {
+    since: input.since,
+    until: input.until,
+    limit,
+  });
+
+  const content = formatEventsExport(events, project, format);
+  let outFile: string | undefined;
+  if (input.out_file) {
+    outFile = resolve(input.out_file);
+    mkdirSync(dirname(outFile), { recursive: true });
+    writeFileSync(outFile, content, 'utf-8');
+  }
+
+  return {
+    project: toProjectSummary(project),
+    format,
+    total: events.length,
+    content,
+    ...(outFile ? { out_file: outFile } : {}),
+  };
+}
+
+export async function doctor(): Promise<DoctorOutput> {
+  const actisHome = process.env.ACTIS_HOME || join(homedir(), '.actis');
+  const dbPath = join(actisHome, 'ledger.db');
+  const dbExists = existsSync(dbPath);
+  const dbSizeBytes = dbExists ? statSync(dbPath).size : 0;
+  const nodeMajor = parseInt(process.version.slice(1).split('.')[0], 10);
+  const projects = getActiveProjects().map(toProjectSummary);
+  const daemon = getDaemonStatus();
+
+  return {
+    node_version: process.version,
+    node_ok: Number.isFinite(nodeMajor) && nodeMajor >= 22,
+    actis_home: actisHome,
+    db_path: dbPath,
+    db_exists: dbExists,
+    db_size_bytes: dbSizeBytes,
+    platform: process.platform,
+    arch: process.arch,
+    is_wsl_mount: process.platform === 'linux' && process.cwd().startsWith('/mnt/'),
+    projects,
+    daemon,
+  };
+}
+

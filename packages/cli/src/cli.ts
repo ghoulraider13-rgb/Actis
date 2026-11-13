@@ -474,6 +474,110 @@ program
   });
 
 program
+  .command('stats')
+  .description('Show activity statistics for a project')
+  .option('-p, --project <path>', 'Project path (defaults to current directory)')
+  .option('--json', 'Output as JSON')
+  .action(async (options?: { project?: string; json?: boolean }) => {
+    const projectPath = options?.project ? resolve(options.project) : process.cwd();
+    const project = (await getProjectByPath(projectPath)) ?? (await getActiveProjects())[0];
+    if (!project) {
+      console.error(chalk.red('No tracked project found. Run "actis init <name> [path]" first.'));
+      process.exit(1);
+    }
+
+    const { events, total } = await queryEvents(project.id!, { limit: 10000 });
+    const byType = { create: 0, modify: 0, delete: 0, rename: 0 };
+    const byFile = new Map<string, number>();
+
+    for (const ev of events) {
+      if (ev.event_type in byType) {
+        byType[ev.event_type as keyof typeof byType]++;
+      }
+      byFile.set(ev.path, (byFile.get(ev.path) ?? 0) + 1);
+    }
+
+    const topFiles = Array.from(byFile.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([path, count]) => ({ path, count }));
+
+    const daemon = getDaemonStatus();
+    const payload = {
+      project: { id: project.id, name: project.name, root_path: project.root_path },
+      total,
+      byType,
+      uniqueFiles: byFile.size,
+      topFiles,
+      daemon,
+    };
+
+    if (options?.json) {
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+
+    console.log(chalk.cyan(`\n=== actis stats: ${project.name} ===\n`));
+    console.log(chalk.bold('Root:'), project.root_path);
+    console.log(chalk.bold('Total events:'), total, `across ${byFile.size} file(s)`);
+    console.log(
+      chalk.bold('Breakdown:'),
+      `${chalk.green(byType.create + ' create')}  ${chalk.yellow(byType.modify + ' modify')}  ${chalk.red(byType.delete + ' delete')}  ${chalk.blue(byType.rename + ' rename')}`,
+    );
+    if (topFiles.length > 0) {
+      console.log(chalk.bold('\nMost active files:'));
+      for (const f of topFiles) {
+        console.log(`  ${chalk.cyan(String(f.count).padStart(3))} × ${f.path}`);
+      }
+    }
+    console.log(
+      chalk.bold('\nDaemon:'),
+      daemon.running ? chalk.green(`RUNNING (PID ${daemon.pid})`) : chalk.gray('STOPPED'),
+    );
+    console.log();
+  });
+
+program
+  .command('replay <path>')
+  .description('Replay chronological diff history for a file (oldest to newest)')
+  .option('-p, --project <path>', 'Project path (defaults to current directory)')
+  .option('-n, --limit <n>', 'Maximum events to replay', '50')
+  .action(async (filePath: string, options?: { project?: string; limit?: string }) => {
+    const projectPath = options?.project ? resolve(options.project) : process.cwd();
+    const project = (await getProjectByPath(projectPath)) ?? (await getActiveProjects())[0];
+    if (!project) {
+      console.error(chalk.red('No tracked project found. Run "actis init <name> [path]" first.'));
+      process.exit(1);
+    }
+
+    const { events } = await queryEvents(project.id!, {
+      path: filePath,
+      limit: parseInt(options?.limit || '50', 10),
+    });
+
+    if (events.length === 0) {
+      console.log(chalk.gray(`No history found matching "${filePath}".`));
+      return;
+    }
+
+    const chronological = [...events].reverse();
+    console.log(chalk.cyan(`\n=== Replay: ${filePath} (${chronological.length} step(s)) ===`));
+    for (let i = 0; i < chronological.length; i++) {
+      const ev = chronological[i];
+      const time = new Date(ev.timestamp).toLocaleString();
+      console.log(`\n${chalk.bold(`[${i + 1}/${chronological.length}]`)} ${chalk.gray(time)} — ${chalk.cyan(ev.event_type.toUpperCase())} ${ev.path}`);
+      if (ev.diff) {
+        for (const line of ev.diff.split('\n').slice(0, 25)) {
+          if (line.startsWith('+')) console.log(chalk.green('  ' + line));
+          else if (line.startsWith('-')) console.log(chalk.red('  ' + line));
+          else console.log(chalk.gray('  ' + line));
+        }
+      }
+    }
+    console.log();
+  });
+
+program
   .command('mcp')
   .description('Start the stdio MCP server')
   .action(async () => {

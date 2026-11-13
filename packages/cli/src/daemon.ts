@@ -7,7 +7,7 @@
 // `start` / `stop` / `status` (and the `--daemon` flag on `watch`) backed by
 // the helpers below. No third-party dependencies are required.
 import { spawn } from 'child_process';
-import { join } from 'path';
+import { dirname, join, resolve } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, openSync, closeSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -203,8 +203,18 @@ export async function startDaemon(config: DaemonConfig): Promise<DaemonResult> {
   ensureActisDir();
   const logFd = openSync(getLogFilePath(), 'w');
 
-  // Re-invoke this CLI binary as the daemon worker (works from compiled dist).
-  const workerScript = fileURLToPath(import.meta.url);
+  // Re-invoke the CLI binary as the daemon worker (works from dist/cli.js, dist/mcp/server.js, or tests).
+  const currentFile = fileURLToPath(import.meta.url);
+  let workerScript = currentFile;
+  if (!currentFile.endsWith('/cli.js') && !currentFile.endsWith('\\cli.js')) {
+    const siblingCli = resolve(dirname(currentFile), '..', 'cli.js');
+    const distCli = resolve(dirname(currentFile), '..', '..', 'dist', 'cli.js');
+    if (existsSync(siblingCli)) {
+      workerScript = siblingCli;
+    } else if (existsSync(distCli)) {
+      workerScript = distCli;
+    }
+  }
 
   const child = spawn(
     process.execPath,

@@ -8,12 +8,17 @@ import { closeDb } from '@actis/core';
 import {
   MCP_TOOLS,
   apply_diff,
+  doctor,
+  export_ledger,
   get_history,
   list_projects,
   query_ledger,
+  watch_project,
   type ApplyDiffInput,
+  type ExportLedgerInput,
   type GetHistoryInput,
   type QueryLedgerInput,
+  type WatchProjectInput,
 } from './tools.js';
 
 export function createMcpServer(): Server {
@@ -53,6 +58,15 @@ export function createMcpServer(): Server {
           break;
         case 'apply_diff':
           result = await apply_diff((args ?? {}) as unknown as ApplyDiffInput);
+          break;
+        case 'watch_project':
+          result = await watch_project((args ?? {}) as unknown as WatchProjectInput);
+          break;
+        case 'export_ledger':
+          result = await export_ledger((args ?? {}) as unknown as ExportLedgerInput);
+          break;
+        case 'doctor':
+          result = await doctor();
           break;
         default:
           throw new Error(`Unknown tool: ${name}`);

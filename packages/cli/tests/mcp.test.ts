@@ -5,7 +5,15 @@ import { join, resolve } from 'path';
 import { createProject, logEvent, resetDbForTesting } from '@actis/core';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { apply_diff, get_history, list_projects, query_ledger } from '../src/mcp/tools.js';
+import {
+  apply_diff,
+  doctor,
+  export_ledger,
+  get_history,
+  list_projects,
+  query_ledger,
+  watch_project,
+} from '../src/mcp/tools.js';
 
 let tempDirs: string[] = [];
 
@@ -283,10 +291,54 @@ describe('MCP tools unit tests', () => {
     expect(res.output).toContain('Path traversal blocked');
     expect(res.files_changed).toEqual([]);
   });
+
+  it('export_ledger exports JSON/CSV/MD and optionally writes out_file', async () => {
+    const projDir = makeTempDir('actis-export-proj-');
+    const outDir = makeTempDir('actis-export-out-');
+    const project = createProject('export-proj', projDir);
+    logEvent({
+      project_id: project.id!,
+      path: 'src/main.ts',
+      event_type: 'create',
+      timestamp: 1_700_000_000_000,
+    });
+
+    const outFile = join(outDir, 'ledger.md');
+    const res = await export_ledger({
+      project_path: projDir,
+      format: 'md',
+      out_file: outFile,
+    });
+
+    expect(res.format).toBe('md');
+    expect(res.total).toBe(1);
+    expect(res.content).toContain('# Actis Activity Export: export-proj');
+    expect(res.out_file).toBe(outFile);
+    expect(readFileSync(outFile, 'utf-8')).toBe(res.content);
+  });
+
+  it('doctor returns structured environment diagnostics', async () => {
+    const res = await doctor();
+    expect(res.node_version).toBe(process.version);
+    expect(res.actis_home).toBe(process.env.ACTIS_HOME);
+    expect(Array.isArray(res.projects)).toBe(true);
+    expect(res.daemon.running).toBe(false);
+  });
+
+  it('watch_project reports status and handles stop when not running', async () => {
+    const statusRes = await watch_project({ action: 'status' });
+    expect(statusRes.action).toBe('status');
+    expect(statusRes.success).toBe(true);
+    expect(statusRes.running).toBe(false);
+
+    const stopRes = await watch_project({ action: 'stop' });
+    expect(stopRes.action).toBe('stop');
+    expect(stopRes.success).toBe(false);
+  });
 });
 
 describe('MCP stdio client-server integration', () => {
-  it('spawns actis mcp over stdio, lists tools, calls tools, and handles errors', async () => {
+  it('spawns actis mcp over stdio, lists 7 tools, calls tools, and handles errors', async () => {
     const actisHome = resetTestLedger();
     const projDir = makeTempDir('actis-stdio-proj-');
     const project = createProject('stdio-proj', projDir);
@@ -319,7 +371,15 @@ describe('MCP stdio client-server integration', () => {
     try {
       const toolsResult = await client.listTools();
       const toolNames = toolsResult.tools.map((t) => t.name).sort();
-      expect(toolNames).toEqual(['apply_diff', 'get_history', 'list_projects', 'query_ledger']);
+      expect(toolNames).toEqual([
+        'apply_diff',
+        'doctor',
+        'export_ledger',
+        'get_history',
+        'list_projects',
+        'query_ledger',
+        'watch_project',
+      ]);
 
       const listRes = await client.callTool({ name: 'list_projects', arguments: {} });
       expect(listRes.isError).toBeFalsy();
@@ -343,6 +403,40 @@ describe('MCP stdio client-server integration', () => {
       expect(historyRes.isError).toBeFalsy();
       const historyData = JSON.parse((historyRes.content[0] as { text: string }).text);
       expect(historyData.total).toBe(1);
+
+      const exportRes = await client.callTool({
+        name: 'export_ledger',
+        arguments: { project_path: projDir, format: 'csv' },
+      });
+      expect(exportRes.isError).toBeFalsy();
+      const exportData = JSON.parse((exportRes.content[0] as { text: string }).text);
+      expect(exportData.total).toBe(1);
+      expect(exportData.content).toContain('create,src/app.ts');
+
+      const doctorRes = await client.callTool({ name: 'doctor', arguments: {} });
+      expect(doctorRes.isError).toBeFalsy();
+      const doctorData = JSON.parse((doctorRes.content[0] as { text: string }).text);
+      expect(doctorData.actis_home).toBe(actisHome);
+      expect(doctorData.projects).toHaveLength(1);
+
+      const watchStartRes = await client.callTool({
+        name: 'watch_project',
+        arguments: { action: 'start', project_path: projDir, debounce_ms: 100 },
+      });
+      expect(watchStartRes.isError).toBeFalsy();
+      const watchStartData = JSON.parse((watchStartRes.content[0] as { text: string }).text);
+      expect(watchStartData.success).toBe(true);
+      expect(watchStartData.running).toBe(true);
+      expect(typeof watchStartData.pid).toBe('number');
+
+      const watchStopRes = await client.callTool({
+        name: 'watch_project',
+        arguments: { action: 'stop' },
+      });
+      expect(watchStopRes.isError).toBeFalsy();
+      const watchStopData = JSON.parse((watchStopRes.content[0] as { text: string }).text);
+      expect(watchStopData.success).toBe(true);
+      expect(watchStopData.running).toBe(false);
 
       const errRes = await client.callTool({
         name: 'nonexistent_tool',
