@@ -17,6 +17,7 @@ export interface TuiState {
   searchQuery: string;
   typeFilter: EventTypeFilter;
   projectCursor: number;
+  liveMode: boolean;
   statusMessage: string;
 }
 
@@ -56,6 +57,7 @@ export function createTuiState(
     searchQuery: '',
     typeFilter: 'all',
     projectCursor: idx,
+    liveMode: true,
     statusMessage: events.length === 0 ? 'No events recorded yet' : '',
   };
 }
@@ -201,6 +203,17 @@ export function applyTuiKey(
     return {
       state: { ...state, statusMessage: 'Refreshed' },
       action: { type: 'refresh' },
+    };
+  }
+  if (key === 'L') {
+    const nextLive = !state.liveMode;
+    return {
+      state: {
+        ...state,
+        liveMode: nextLive,
+        statusMessage: nextLive ? 'Live tailing ON' : 'Live tailing PAUSED',
+      },
+      action: { type: 'none' },
     };
   }
   if (key === '\t') {

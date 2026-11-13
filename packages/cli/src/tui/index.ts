@@ -63,8 +63,25 @@ export async function startTui(projectPathArg?: string): Promise<void> {
   draw();
 
   await new Promise<void>((resolvePromise) => {
+    const pollTimer = setInterval(() => {
+      if (!state.liveMode || state.mode !== 'normal') return;
+      const refreshedProjects = getActiveProjects();
+      const activeProj = refreshedProjects[state.activeProjectIndex];
+      const latestEvents = loadProjectEvents(activeProj);
+      const prevTopId = state.allEvents[0]?.id;
+      const nextTopId = latestEvents[0]?.id;
+      if (latestEvents.length !== state.allEvents.length || prevTopId !== nextTopId) {
+        state = {
+          ...withEvents(state, latestEvents),
+          projects: refreshedProjects,
+        };
+        draw();
+      }
+    }, 1500);
+
     const onResize = () => draw();
     const onSigint = () => {
+      clearInterval(pollTimer);
       cleanup();
       process.off('SIGWINCH', onResize);
       resolvePromise();
@@ -80,6 +97,7 @@ export async function startTui(projectPathArg?: string): Promise<void> {
       state = nextState;
 
       if (action.type === 'quit') {
+        clearInterval(pollTimer);
         process.stdin.off('data', onData);
         process.off('SIGWINCH', onResize);
         process.off('SIGINT', onSigint);

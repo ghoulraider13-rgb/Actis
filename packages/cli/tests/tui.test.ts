@@ -144,4 +144,14 @@ describe('sleepy-vim TUI state & keybindings', () => {
     expect(plainLines[22]).toContain('NORMAL');
     expect(plainLines[23]).toContain('j/k:nav');
   });
+
+  it('toggles liveMode with L and renders LIVE/PAUSED badge', () => {
+    let state = createTuiState(sampleProjects, sampleEvents);
+    expect(state.liveMode).toBe(true);
+    expect(stripAnsi(renderTuiFrame(state, 100, 24))).toContain('LIVE');
+
+    state = applyTuiKey(state, 'L').state;
+    expect(state.liveMode).toBe(false);
+    expect(stripAnsi(renderTuiFrame(state, 100, 24))).toContain('PAUSED');
+  });
 });

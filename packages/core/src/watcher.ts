@@ -4,7 +4,7 @@ import { relative, resolve } from 'path';
 import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { getDb, logEvent, saveDb, FileEvent } from './db.js';
 import { computeHash, computeDiff } from './diff.js';
-import { parseIgnoreFile, DEFAULT_IGNORE_PATTERNS, SECRET_PATTERNS, shouldDiffFile } from './ignore.js';
+import { buildIgnoreMatcher } from './ignore.js';
 
 export interface WatcherConfig {
   projectRoot: string;
@@ -78,39 +78,7 @@ export class ActisWatcher {
     ]);
 
     // Build ignore matcher from .gitignore + .actisignore + defaults + secret patterns
-    this.ignoreMatcher = this.buildIgnoreMatcher();
-  }
-
-  private buildIgnoreMatcher(): (path: string) => boolean {
-    const patterns: string[] = [
-      ...DEFAULT_IGNORE_PATTERNS,
-      ...SECRET_PATTERNS,
-    ];
-
-    // Add .gitignore patterns
-    const gitignorePath = resolve(this.projectRoot, '.gitignore');
-    if (existsSync(gitignorePath)) {
-      patterns.push(...parseIgnoreFile(gitignorePath));
-    }
-
-    // Add .actisignore patterns
-    const actisignorePath = resolve(this.projectRoot, '.actisignore');
-    if (existsSync(actisignorePath)) {
-      patterns.push(...parseIgnoreFile(actisignorePath));
-    }
-
-    // Convert glob patterns to regex
-    const regexes = patterns.map(pattern => {
-      // Escape regex special chars except * and ?
-      const escaped = pattern
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-        .replace(/\*\*/g, '.*')
-        .replace(/\*/g, '[^/]*')
-        .replace(/\?/g, '[^/]');
-      return new RegExp(`^${escaped}$`);
-    });
-
-    return (path: string) => regexes.some(re => re.test(path));
+    this.ignoreMatcher = buildIgnoreMatcher(this.projectRoot, config.ignorePatterns || []);
   }
 
   async initialize(): Promise<void> {

@@ -55,6 +55,9 @@ npm run web
 | `actis query <question>` | Query the activity log in plain English |
 | `actis list` | List all tracked projects |
 | `actis show <file>` | Show detailed history for a file |
+| `actis tui [path]` | Open the sleepy-vim interactive terminal UI |
+| `actis export` | Export ledger events (`json`, `csv`, or `md`) |
+| `actis mcp` | Start the stdio MCP server for AI assistants |
 | `npm run web` | Start the local web dashboard on port 7420 |
 
 ## Query Examples

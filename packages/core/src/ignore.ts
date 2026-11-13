@@ -1,5 +1,5 @@
 // Ignore pattern handling for actis watcher
-// Supports .gitignore, .actisignore, and secret-safe defaults
+// Supports .gitignore, .actisignore, negation (!), directory-only (dir/), and secret-safe defaults
 
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
@@ -54,6 +54,62 @@ export interface ParsedIgnoreRule {
   pattern: string;
   negated: boolean;
   directoryOnly: boolean;
+  anchored: boolean;
+}
+
+function globToRegexSource(glob: string): string {
+  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  return escaped.replace(/\*\*\/|\*\*|\*|\?/g, (token) => {
+    if (token === '**/') return '(?:.+/)?';
+    if (token === '**') return '.*';
+    if (token === '*') return '[^/]*';
+    return '[^/]';
+  });
+}
+
+export function parseIgnoreRule(rawLine: string): ParsedIgnoreRule | null {
+  const trimmed = rawLine.trim();
+  if (!trimmed || trimmed.startsWith('#')) return null;
+
+  let pattern = trimmed;
+  let negated = false;
+  if (pattern.startsWith('!')) {
+    negated = true;
+    pattern = pattern.slice(1).trim();
+  }
+  if (!pattern) return null;
+
+  let directoryOnly = false;
+  if (pattern.endsWith('/')) {
+    directoryOnly = true;
+    pattern = pattern.slice(0, -1);
+  }
+
+  let anchored = false;
+  if (pattern.startsWith('/')) {
+    anchored = true;
+    pattern = pattern.slice(1);
+  } else if (pattern.includes('/')) {
+    // Gitignore spec: a pattern containing a slash (other than trailing) is anchored to root
+    // unless it starts with **/
+    if (!pattern.startsWith('**/')) {
+      anchored = true;
+    }
+  }
+
+  if (!pattern) return null;
+  return { pattern, negated, directoryOnly, anchored };
+}
+
+export function parseIgnoreRules(filePath: string): ParsedIgnoreRule[] {
+  if (!existsSync(filePath)) return [];
+  const content = readFileSync(filePath, 'utf-8');
+  const rules: ParsedIgnoreRule[] = [];
+  for (const line of content.split('\n')) {
+    const parsed = parseIgnoreRule(line);
+    if (parsed) rules.push(parsed);
+  }
+  return rules;
 }
 
 export function parseIgnoreFile(filePath: string): string[] {
@@ -66,7 +122,6 @@ export function parseIgnoreFile(filePath: string): string[] {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
-    // Handle negation (!) - we'll ignore negated patterns for simplicity
     if (trimmed.startsWith('!')) continue;
     patterns.push(trimmed);
   }
@@ -74,53 +129,57 @@ export function parseIgnoreFile(filePath: string): string[] {
   return patterns;
 }
 
+function compileRule(rule: ParsedIgnoreRule): { negated: boolean; regex: RegExp } {
+  const src = globToRegexSource(rule.pattern);
+  const prefix = rule.anchored ? '^' : '^(?:.*/)?';
+  const suffix = rule.directoryOnly ? '(?:/.*)?$' : '(?:/.*)?$';
+  return {
+    negated: rule.negated,
+    regex: new RegExp(`${prefix}${src}${suffix}`),
+  };
+}
+
 export function buildIgnoreMatcher(
   projectRoot: string,
-  customPatterns: string[] = []
+  customPatterns: string[] = [],
 ): (relPath: string) => boolean {
-  const allPatterns = [
-    ...DEFAULT_IGNORE_PATTERNS,
-    ...SECRET_PATTERNS,
-    ...customPatterns,
-  ];
+  const rules: ParsedIgnoreRule[] = [];
 
-  // Add .gitignore
+  for (const p of [...DEFAULT_IGNORE_PATTERNS, ...SECRET_PATTERNS, ...customPatterns]) {
+    const parsed = parseIgnoreRule(p);
+    if (parsed) rules.push(parsed);
+  }
+
   const gitignorePath = resolve(projectRoot, '.gitignore');
   if (existsSync(gitignorePath)) {
-    allPatterns.push(...parseIgnoreFile(gitignorePath));
+    rules.push(...parseIgnoreRules(gitignorePath));
   }
 
-  // Add .actisignore
   const actisignorePath = resolve(projectRoot, '.actisignore');
   if (existsSync(actisignorePath)) {
-    allPatterns.push(...parseIgnoreFile(actisignorePath));
+    rules.push(...parseIgnoreRules(actisignorePath));
   }
 
-  // Convert glob patterns to regex
-  const regexes = allPatterns.map(pattern => {
-    // Escape regex special chars except * and ?
-    const escaped = pattern
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*\*/g, '.*')
-      .replace(/\*/g, '[^/]*')
-      .replace(/\?/g, '[^/]');
-    return new RegExp(`^${escaped}$`);
-  });
+  const compiled = rules.map(compileRule);
 
-  return (relPath: string) => regexes.some(re => re.test(relPath));
+  return (relPath: string) => {
+    const normalized = relPath.replace(/\\/g, '/').replace(/^\/+/, '');
+    if (!normalized) return false;
+    let ignored = false;
+    for (const rule of compiled) {
+      if (rule.regex.test(normalized)) {
+        ignored = !rule.negated;
+      }
+    }
+    return ignored;
+  };
 }
 
 export function shouldDiffFile(relPath: string): boolean {
-  // Check if file matches any no-diff pattern
+  const normalized = relPath.replace(/\\/g, '/');
   for (const pattern of NO_DIFF_PATTERNS) {
-    const regex = new RegExp(
-      '^' + pattern
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-        .replace(/\*\*/g, '.*')
-        .replace(/\*/g, '[^/]*')
-        .replace(/\?/g, '[^/]') + '$'
-    );
-    if (regex.test(relPath)) return false;
+    const regex = new RegExp(`^${globToRegexSource(pattern)}$`);
+    if (regex.test(normalized)) return false;
   }
   return true;
 }

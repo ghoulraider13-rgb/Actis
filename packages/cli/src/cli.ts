@@ -8,6 +8,7 @@ import { parseNaturalQuery, formatEventsForDisplay, ParsedQuery } from '@actis/c
 import { executeQuery } from './query-cli.js';
 import { parseQueryWithLLMFallback, type LLMQueryOptions } from '@actis/core/llm-query';
 import { gcCommand } from './gc.js';
+import { exportCommand, type ExportFormat } from './export.js';
 import { startDaemon, stopDaemon, getDaemonStatus } from './daemon.js';
 import * as chrono from 'chrono-node';
 
@@ -421,7 +422,8 @@ program
     const { homedir } = await import('os');
     const { join } = await import('path');
     const { existsSync } = await import('fs');
-    const dbPath = join(homedir(), '.actis', 'ledger.db');
+    const actisHome = process.env.ACTIS_HOME || join(homedir(), '.actis');
+    const dbPath = join(actisHome, 'ledger.db');
     console.log(chalk.bold('Database:'), dbPath);
     if (existsSync(dbPath)) {
       const stats = await import('fs').then(fs => fs.statSync(dbPath));
@@ -444,6 +446,31 @@ program
     }
 
     console.log();
+  });
+
+program
+  .command('export')
+  .description('Export ledger events to JSON, CSV, or Markdown')
+  .option('-p, --project <path>', 'Project path (defaults to first active project)')
+  .option('-f, --format <format>', 'Output format: json, csv, md', 'json')
+  .option('--since <date>', 'Start time (ISO or natural language)')
+  .option('--until <date>', 'End time (ISO or natural language)')
+  .option('-l, --limit <n>', 'Maximum events to export', '1000')
+  .option('-o, --out <file>', 'Write output to file instead of stdout')
+  .action(async (options?: any) => {
+    const fmt = (options?.format || 'json').toLowerCase() as ExportFormat;
+    if (!['json', 'csv', 'md'].includes(fmt)) {
+      console.error(chalk.red(`Invalid format "${fmt}". Expected json, csv, or md.`));
+      process.exit(1);
+    }
+    await exportCommand({
+      projectPath: options?.project,
+      format: fmt,
+      since: options?.since ? parseTimeOption(options.since) : undefined,
+      until: options?.until ? parseTimeOption(options.until) : undefined,
+      limit: options?.limit ? parseInt(options.limit, 10) : 1000,
+      outFile: options?.out,
+    });
   });
 
 program

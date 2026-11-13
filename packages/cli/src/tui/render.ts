@@ -182,10 +182,13 @@ export function renderTuiFrame(
 
   // Top header bar (1 row)
   const titleLeft = ` ${PALETTE.bold}${PALETTE.accent}actis${PALETTE.reset}${PALETTE.muted} · sleepy ledger${PALETTE.reset}`;
+  const liveBadge = state.liveMode
+    ? ` ${PALETTE.green}● LIVE${PALETTE.reset}`
+    : ` ${PALETTE.muted}○ PAUSED${PALETTE.reset}`;
   const filterBadge =
     state.typeFilter !== 'all' ? ` ${PALETTE.amber}[${state.typeFilter}]${PALETTE.reset}` : '';
   const countBadge = `${PALETTE.subtext}${state.filteredEvents.length}/${state.allEvents.length} events${PALETTE.reset}`;
-  const headerRight = `${PALETTE.blue}${truncatePlain(projectLabel, Math.max(16, Math.floor(width * 0.45)))}${PALETTE.reset}${filterBadge}  ${countBadge} `;
+  const headerRight = `${PALETTE.blue}${truncatePlain(projectLabel, Math.max(16, Math.floor(width * 0.4)))}${PALETTE.reset}${filterBadge}${liveBadge}  ${countBadge} `;
   const gap = Math.max(1, width - visibleLength(titleLeft) - visibleLength(headerRight));
   const headerLine = `${PALETTE.bgBar}${titleLeft}${' '.repeat(gap)}${headerRight}${PALETTE.reset}`;
 
