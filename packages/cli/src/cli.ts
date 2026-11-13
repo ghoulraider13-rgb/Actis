@@ -454,6 +454,15 @@ program
     await startMcpServer();
   });
 
+program
+  .command('tui [path]')
+  .alias('ui')
+  .description('Open the sleepy-vim interactive terminal UI')
+  .action(async (path?: string) => {
+    const { startTui } = await import('./tui/index.js');
+    await startTui(path);
+  });
+
 // When spawned as a `daemon-worker` subprocess, daemon.ts runs the watcher
 // directly. In that mode the CLI must not parse argv (commander would reject
 // the unknown `daemon-worker` sentinel command).
