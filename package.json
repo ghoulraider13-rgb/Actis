@@ -22,7 +22,7 @@
   },
   "scripts": {
     "build": "pnpm --filter=@actis/core --filter=@actis/cli run build",
-    "test": "pnpm --filter=@actis/core run test",
+    "test": "pnpm --filter=@actis/core --filter=@actis/cli run test",
     "lint": "pnpm --filter=@actis/core --filter=@actis/cli run lint",
     "dev:cli": "pnpm --filter=@actis/cli run dev",
     "cli": "pnpm --filter=@actis/cli run start --",

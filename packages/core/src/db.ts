@@ -163,31 +163,37 @@ export function queryEvents(projectId: number, options: {
   until?: number;
   path?: string;
   eventType?: string;
+  eventTypes?: string[];
   limit?: number;
   offset?: number;
 } = {}): QueryResult {
   const database = getDb();
-  let sql = 'SELECT * FROM file_events WHERE project_id = ?';
-  const params: (number | string)[] = [projectId];
+  let whereClause = ' WHERE project_id = ?';
+  const baseParams: (number | string)[] = [projectId];
 
-  if (options.since) {
-    sql += ' AND timestamp >= ?';
-    params.push(options.since);
+  if (options.since !== undefined) {
+    whereClause += ' AND timestamp >= ?';
+    baseParams.push(options.since);
   }
-  if (options.until) {
-    sql += ' AND timestamp <= ?';
-    params.push(options.until);
+  if (options.until !== undefined) {
+    whereClause += ' AND timestamp <= ?';
+    baseParams.push(options.until);
   }
   if (options.path) {
-    sql += ' AND path LIKE ?';
-    params.push(`%${options.path}%`);
+    whereClause += ' AND path LIKE ?';
+    baseParams.push(`%${options.path}%`);
   }
-  if (options.eventType) {
-    sql += ' AND event_type = ?';
-    params.push(options.eventType);
+  if (options.eventTypes && options.eventTypes.length > 0) {
+    const placeholders = options.eventTypes.map(() => '?').join(', ');
+    whereClause += ` AND event_type IN (${placeholders})`;
+    baseParams.push(...options.eventTypes);
+  } else if (options.eventType) {
+    whereClause += ' AND event_type = ?';
+    baseParams.push(options.eventType);
   }
 
-  sql += ' ORDER BY timestamp DESC';
+  let sql = `SELECT * FROM file_events${whereClause} ORDER BY timestamp DESC`;
+  const params = [...baseParams];
 
   if (options.limit) {
     sql += ' LIMIT ?';
@@ -200,27 +206,8 @@ export function queryEvents(projectId: number, options: {
 
   const events = database.prepare(sql).all(...params).map(rowToEvent);
 
-  // Get total count
-  let countSql = 'SELECT COUNT(*) as count FROM file_events WHERE project_id = ?';
-  const countParams: (number | string)[] = [projectId];
-  if (options.since) {
-    countSql += ' AND timestamp >= ?';
-    countParams.push(options.since);
-  }
-  if (options.until) {
-    countSql += ' AND timestamp <= ?';
-    countParams.push(options.until);
-  }
-  if (options.path) {
-    countSql += ' AND path LIKE ?';
-    countParams.push(`%${options.path}%`);
-  }
-  if (options.eventType) {
-    countSql += ' AND event_type = ?';
-    countParams.push(options.eventType);
-  }
-
-  const countRow = database.prepare(countSql).get(...countParams) as { count: number } | undefined;
+  const countSql = `SELECT COUNT(*) as count FROM file_events${whereClause}`;
+  const countRow = database.prepare(countSql).get(...baseParams) as { count: number } | undefined;
   const total = countRow?.count ?? 0;
 
   return { events, total };

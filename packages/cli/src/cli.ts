@@ -446,6 +446,14 @@ program
     console.log();
   });
 
+program
+  .command('mcp')
+  .description('Start the stdio MCP server')
+  .action(async () => {
+    const { startMcpServer } = await import('./mcp/server.js');
+    await startMcpServer();
+  });
+
 // When spawned as a `daemon-worker` subprocess, daemon.ts runs the watcher
 // directly. In that mode the CLI must not parse argv (commander would reject
 // the unknown `daemon-worker` sentinel command).
